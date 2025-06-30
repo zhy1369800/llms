@@ -1,6 +1,5 @@
-import { UnifiedChatRequest } from "../types/llm";
-// import { configService } from "../services/config";
 import { ProxyAgent } from "undici";
+import { UnifiedChatRequest } from "../types/llm";
 import { log } from "./log";
 
 export function sendUnifiedRequest(
@@ -36,12 +35,12 @@ export function sendUnifiedRequest(
     body: JSON.stringify(request),
     signal: combinedSignal,
   };
-  // const httpsProxy = configService.getHttpsProxy();
-  // if (httpsProxy && typeof global !== "undefined") {
-  //   (fetchOptions as any).dispatcher = new ProxyAgent(
-  //     new URL(httpsProxy).toString()
-  //   );
-  // }
+
+  if (config.httpsProxy) {
+    (fetchOptions as any).dispatcher = new ProxyAgent(
+      new URL(config.httpsProxy).toString()
+    );
+  }
   return fetch(
     typeof url === "string" ? url : url.toString(),
     fetchOptions

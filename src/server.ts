@@ -35,6 +35,9 @@ declare module "fastify" {
   interface FastifyRequest {
     provider?: string;
   }
+  interface FastifyInstance {
+    _server?: Server;
+  }
 }
 
 // Server configuration interface
@@ -114,7 +117,7 @@ class Server {
 
   async start(): Promise<void> {
     try {
-      this.app.server = this;
+      this.app._server = this;
 
       this.app.addHook(
         "preHandler",

@@ -11,7 +11,7 @@ import {
 } from "@/types/llm";
 import { sendUnifiedRequest } from "@/utils/request";
 import { createApiError } from "./middleware";
-import { log } from "console";
+import { log } from "../utils/log";
 
 export const registerApiRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
@@ -25,46 +25,8 @@ export const registerApiRoutes: FastifyPluginAsync = async (
     return { status: "ok", timestamp: new Date().toISOString() };
   });
 
-  // Chat completions endpoints
-  fastify.post(
-    "/v1/chat/completions",
-    {
-      schema: {
-        body: {
-          type: "object",
-          properties: {
-            messages: { type: "array" },
-            model: { type: "string" },
-            max_tokens: { type: "number" },
-            temperature: { type: "number" },
-            stream: { type: "boolean" },
-          },
-          required: ["messages", "model"],
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const response =
-        await fastify.server.llmService.handleOpenAIFormatRequest({
-          ...(request.body as UnifiedChatRequest),
-          model: "deepseek,deepseek-chat",
-          max_tokens: 8192,
-        });
-
-      const isStream = (request.body as any)?.stream === true;
-      if (isStream) {
-        reply.header("Content-Type", "text/event-stream");
-        reply.header("Cache-Control", "no-cache");
-        reply.header("Connection", "keep-alive");
-        return reply.send(response.body);
-      } else {
-        return response.json();
-      }
-    }
-  );
-
   const transformersWithEndpoint =
-    fastify.server.transformerService.getTransformersWithEndpoint();
+    fastify._server!.transformerService.getTransformersWithEndpoint();
 
   for (const { name, transformer } of transformersWithEndpoint) {
     if (transformer.endPoint) {
@@ -74,8 +36,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           const body = req.body as any;
           const providerNmae = req.provider!;
           const provider =
-            fastify.server.providerService.getProvider(providerNmae);
-          console.log(providerNmae, req.body.model, provider);
+            fastify._server!.providerService.getProvider(providerNmae);
           if (!provider) {
             throw createApiError(
               `Provider '${providerNmae}' not found`,
@@ -90,7 +51,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           if (provider.transformer?.use?.length) {
             for (const transformerName of provider.transformer.use) {
               const transformer =
-                fastify.server.transformerService.getTransformer(
+                fastify._server!.transformerService.getTransformer(
                   transformerName
                 );
               if (
@@ -102,11 +63,11 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               requestBody = transformer.transformRequestOut(requestBody);
             }
           }
-          if (provider.transformers?.[req.body.model]?.use?.length) {
-            for (const transformerName of provider.transformers[req.body.model]
+          if (provider.transformer?.[req.body.model]?.use?.length) {
+            for (const transformerName of provider.transformer[req.body.model]
               .use) {
               const transformer =
-                fastify.server.transformerService.getTransformer(
+                fastify._server!.transformerService.getTransformer(
                   transformerName
                 );
               if (
@@ -120,6 +81,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           }
           const url = new URL(provider.baseUrl);
           const response = await sendUnifiedRequest(url, requestBody, {
+            httpsProxy: fastify._server!.configService.getHttpsProxy(),
             headers: {
               Authorization: `Bearer ${provider.apiKey}`,
             },
@@ -137,7 +99,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           if (provider.transformer?.use?.length) {
             for (const transformerName of provider.transformer.use) {
               const transformer =
-                fastify.server.transformerService.getTransformer(
+                fastify._server!.transformerService.getTransformer(
                   transformerName
                 );
               if (
@@ -155,7 +117,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
             for (const transformerName of provider.transformers[req.body.model]
               .use) {
               const transformer =
-                fastify.server.transformerService.getTransformer(
+                fastify._server!.transformerService.getTransformer(
                   transformerName
                 );
               if (
@@ -245,7 +207,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       }
 
       // Check if provider already exists
-      if (fastify.server.providerService.getProvider(id)) {
+      if (fastify._server!.providerService.getProvider(id)) {
         throw createApiError(
           `Provider with ID '${id}' already exists`,
           400,
@@ -253,7 +215,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         );
       }
 
-      const provider = fastify.server.providerService.registerProvider(
+      const provider = fastify._server!.providerService.registerProvider(
         request.body
       );
       return provider;
@@ -261,7 +223,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
   );
 
   fastify.get("/providers", async (request, reply) => {
-    return fastify.server.providerService.getProviders();
+    return fastify._server!.providerService.getProviders();
   });
 
   fastify.get(
@@ -276,7 +238,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       },
     },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
-      const provider = fastify.server.providerService.getProvider(
+      const provider = fastify._server!.providerService.getProvider(
         request.params.id
       );
       if (!provider) {
@@ -315,7 +277,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       }>,
       reply
     ) => {
-      const provider = fastify.server.providerService.updateProvider(
+      const provider = fastify._server!.providerService.updateProvider(
         request.params.id,
         request.body
       );
@@ -338,7 +300,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       },
     },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
-      const success = fastify.server.providerService.deleteProvider(
+      const success = fastify._server!.providerService.deleteProvider(
         request.params.id
       );
       if (!success) {
@@ -371,7 +333,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       }>,
       reply
     ) => {
-      const success = fastify.server.providerService.toggleProvider(
+      const success = fastify._server!.providerService.toggleProvider(
         request.params.id,
         request.body.enabled
       );
@@ -379,9 +341,8 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         return reply.code(404).send({ error: "Provider not found" });
       }
       return {
-        message: `Provider ${
-          request.body.enabled ? "enabled" : "disabled"
-        } successfully`,
+        message: `Provider ${request.body.enabled ? "enabled" : "disabled"
+          } successfully`,
       };
     }
   );
