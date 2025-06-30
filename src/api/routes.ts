@@ -8,8 +8,8 @@ import {
   UnifiedChatRequest,
   RegisterProviderRequest,
   LLMProvider,
-} from "../types/llm";
-import { sendUnifiedRequest } from "../utils/request";
+} from "@/types/llm";
+import { sendUnifiedRequest } from "@/utils/request";
 import { createApiError } from "./middleware";
 import { log } from "console";
 

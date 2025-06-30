@@ -1,7 +1,7 @@
 import { ChatCompletion } from "openai/resources";
-import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "../types/llm";
-import { Transformer } from "../types/transformer";
-import { log } from "../utils/log";
+import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "@/types/llm";
+import { Transformer } from "@/types/transformer";
+import { log } from "@/utils/log";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
@@ -207,7 +207,7 @@ export class AnthropicTransformer implements Transformer {
     return result;
   }
 
-  async transformResponseOut(response: Response) {
+  async transformResponseOut(response: Response): Promise<Response> {
     const isStream = response.headers
       .get("Content-Type")
       ?.includes("text/event-stream");
