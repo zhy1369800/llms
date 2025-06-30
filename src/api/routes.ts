@@ -113,8 +113,8 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               );
             }
           }
-          if (provider.transformers?.[req.body.model]?.use?.length) {
-            for (const transformerName of provider.transformers[req.body.model]
+          if (provider.transformer?.[req.body.model]?.use?.length) {
+            for (const transformerName of provider.transformer[req.body.model]
               .use) {
               const transformer =
                 fastify._server!.transformerService.getTransformer(
