@@ -19,7 +19,7 @@
     "start": "node dist/cjs/server.cjs",
     "start:esm": "node dist/esm/server.mjs"
   },
-  "keywords": [],
+  "keywords": [ ],
   "author": "",
   "license": "MIT",
   "dependencies": {

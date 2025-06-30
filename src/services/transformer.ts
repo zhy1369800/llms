@@ -1,10 +1,7 @@
-import { Transformer } from "../types/transformer";
-import { log } from "../utils/log";
+import { Transformer } from "@/types/transformer";
+import { log } from "@/utils/log";
 import { ConfigService } from "./config";
-import { AnthropicTransformer } from "../transformer/anthropic.transformer";
-import { GeminiTransformer } from "../transformer/gemini.transformer";
-import { DeepseekTransformer } from "../transformer/deepseek.transformer";
-import { TooluseTransformer } from "../transformer/tooluse.transformer";
+import { AnthropicTransformer, GeminiTransformer, DeepseekTransformer, TooluseTransformer } from "@/transformer";
 
 interface TransformerConfig {
   transformers: Array<{
