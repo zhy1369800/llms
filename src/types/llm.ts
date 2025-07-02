@@ -11,10 +11,26 @@ import type {
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages";
 
+// 内容类型定义
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+export interface ImageContent {
+  type: "image";
+  image_url: {
+    url: string;
+    detail?: "auto" | "low" | "high";
+  };
+}
+
+export type MessageContent = TextContent | ImageContent;
+
 // 统一的消息接口
 export interface UnifiedMessage {
   role: "user" | "assistant" | "system" | "tool";
-  content: string | null;
+  content: string | null | MessageContent[];
   tool_calls?: Array<{
     id: string;
     type: "function";
@@ -40,6 +56,8 @@ export interface UnifiedTool {
       type: "object";
       properties: Record<string, any>;
       required?: string[];
+      additionalProperties?: boolean;
+      $schema?: string;
     };
   };
 }

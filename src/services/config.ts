@@ -130,7 +130,8 @@ export class ConfigService {
     return (
       this.get("HTTPS_PROXY") ||
       this.get("https_proxy") ||
-      this.get("httpsProxy")
+      this.get("httpsProxy") ||
+      this.get("PROXY_URL") 
     );
   }
 

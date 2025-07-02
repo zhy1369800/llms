@@ -44,10 +44,19 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               "provider_not_found"
             );
           }
-          let requestBody =
-            typeof transformer.transformRequestOut === "function"
-              ? transformer.transformRequestOut(body as UnifiedChatRequest)
-              : body;
+          let requestBody = body;
+          let config = {};
+          if (typeof transformer.transformRequestOut === "function") {
+            const transformOut = transformer.transformRequestOut(
+              body as UnifiedChatRequest
+            );
+            if (transformOut.body) {
+              requestBody = transformOut.body;
+              config = transformOut.config || {};
+            } else {
+              requestBody = transformOut;
+            }
+          }
           if (provider.transformer?.use?.length) {
             for (const transformerName of provider.transformer.use) {
               const transformer =
@@ -56,11 +65,20 @@ export const registerApiRoutes: FastifyPluginAsync = async (
                 );
               if (
                 !transformer ||
-                typeof transformer.transformRequestOut !== "function"
+                typeof transformer.transformRequestIn !== "function"
               ) {
                 continue;
               }
-              requestBody = transformer.transformRequestOut(requestBody);
+              const transformIn = transformer.transformRequestIn(
+                requestBody,
+                provider
+              );
+              if (transformIn.body) {
+                requestBody = transformIn.body;
+                config = { ...config, ...transformIn.config };
+              } else {
+                requestBody = transformIn;
+              }
             }
           }
           if (provider.transformer?.[req.body.model]?.use?.length) {
@@ -72,18 +90,23 @@ export const registerApiRoutes: FastifyPluginAsync = async (
                 );
               if (
                 !transformer ||
-                typeof transformer.transformRequestOut !== "function"
+                typeof transformer.transformRequestIn !== "function"
               ) {
                 continue;
               }
-              requestBody = transformer.transformRequestOut(requestBody);
+              requestBody = transformer.transformRequestIn(
+                requestBody,
+                provider
+              );
             }
           }
-          const url = new URL(provider.baseUrl);
+          const url = config.url || new URL(provider.baseUrl);
           const response = await sendUnifiedRequest(url, requestBody, {
             httpsProxy: fastify._server!.configService.getHttpsProxy(),
+            ...config,
             headers: {
               Authorization: `Bearer ${provider.apiKey}`,
+              ...(config?.headers || {}),
             },
           });
           if (!response.ok) {
@@ -131,11 +154,12 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               );
             }
           }
-          if (transformer.transformResponseOut) {
-            finalResponse = await transformer.transformResponseOut(
+          if (transformer.transformResponseIn) {
+            finalResponse = await transformer.transformResponseIn(
               finalResponse
             );
           }
+
           if (!finalResponse.ok) {
             reply.code(finalResponse.status);
           }
@@ -341,8 +365,9 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         return reply.code(404).send({ error: "Provider not found" });
       }
       return {
-        message: `Provider ${request.body.enabled ? "enabled" : "disabled"
-          } successfully`,
+        message: `Provider ${
+          request.body.enabled ? "enabled" : "disabled"
+        } successfully`,
       };
     }
   );

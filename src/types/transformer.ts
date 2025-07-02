@@ -1,7 +1,10 @@
-import { UnifiedChatRequest } from "./llm";
+import { LLMProvider, UnifiedChatRequest } from "./llm";
 
 export type Transformer = {
-  transformRequestIn?: (request: UnifiedChatRequest) => Record<string, any>;
+  transformRequestIn?: (
+    request: UnifiedChatRequest,
+    provider: LLMProvider
+  ) => Record<string, any>;
   transformResponseIn?: (response: Response) => Promise<Response>;
 
   // 将请求格式转换为通用的格式

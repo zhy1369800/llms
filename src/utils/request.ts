@@ -7,7 +7,6 @@ export function sendUnifiedRequest(
   request: UnifiedChatRequest,
   config: any
 ): Promise<Response> {
-  log('final request:', request)
   const headers = new Headers({
     "Content-Type": "application/json",
   });
@@ -41,8 +40,6 @@ export function sendUnifiedRequest(
       new URL(config.httpsProxy).toString()
     );
   }
-  return fetch(
-    typeof url === "string" ? url : url.toString(),
-    fetchOptions
-  );
+  log("final request:", typeof url === "string" ? url : url.toString(), config.httpsProxy,  fetchOptions);
+  return fetch(typeof url === "string" ? url : url.toString(), fetchOptions);
 }

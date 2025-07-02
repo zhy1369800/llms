@@ -40,15 +40,7 @@ declare module "fastify" {
   }
 }
 
-// Server configuration interface
-interface ServerConfig {
-  port: number;
-  host: string;
-  logger: boolean;
-}
-
 interface ServerOptions {
-  config?: ServerConfig;
   initialConfig?: AppConfig;
 }
 

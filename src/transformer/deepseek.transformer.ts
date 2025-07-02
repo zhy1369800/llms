@@ -4,7 +4,7 @@ import { Transformer } from "../types/transformer";
 export class DeepseekTransformer implements Transformer {
   name = "deepseek";
 
-  transformRequestOut(request: UnifiedChatRequest): UnifiedChatRequest {
+  transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
     if (request.max_tokens && request.max_tokens > 8192) {
       request.max_tokens = 8192; // DeepSeek has a max token limit of 8192
     }

@@ -105,90 +105,6 @@ export class AnthropicTransformer implements Transformer {
             }
           }
           return;
-
-          const textParts: string[] = [];
-          const toolUseContent = msg.content.filter(
-            (c: any) => c.type === "tool_use"
-          );
-          const toolResultContent = msg.content.filter(
-            (c: any) => c.type === "tool_result"
-          );
-
-          msg.content.forEach((contentItem: any, contentIndex: number) => {
-            if (contentItem.type === "text") {
-              if (contentItem.text) {
-                if (contentItem.text.startsWith("<system-reminder>")) {
-                  systemReminders.push({
-                    role: "system",
-                    content: contentItem.text,
-                  });
-                } else {
-                  textParts.push(contentItem.text);
-                }
-              }
-            }
-          });
-
-          if (textParts.length > 0) {
-            unifiedMsg.content = textParts.join("\n");
-          }
-
-          if (toolUseContent.length > 0) {
-            unifiedMsg.tool_calls = toolUseContent.map(
-              (tool: any, toolIndex: number) => {
-                let argumentsStr = "{}";
-                try {
-                  if (tool.input && typeof tool.input === "object") {
-                    argumentsStr = JSON.stringify(tool.input);
-                  } else if (typeof tool.input === "string") {
-                    JSON.parse(tool.input);
-                    argumentsStr = tool.input;
-                  }
-                } catch (error) {
-                  log(
-                    `covert tool use error:`,
-                    error,
-                    "origin tool input",
-                    tool.input
-                  );
-                  argumentsStr = JSON.stringify(tool.input || {});
-                }
-
-                return {
-                  id: tool.id,
-                  type: "function" as const,
-                  function: {
-                    name: tool.name,
-                    arguments: argumentsStr,
-                  },
-                };
-              }
-            );
-          }
-          const hasAssistantContent =
-            unifiedMsg.content ||
-            (unifiedMsg.tool_calls && unifiedMsg.tool_calls.length > 0);
-
-          if (hasAssistantContent) {
-            messages.push(unifiedMsg);
-          }
-
-          if (toolResultContent.length > 0) {
-            toolResultContent.forEach((result: any, resultIndex: number) => {
-              const toolMessage: UnifiedMessage = {
-                role: "tool",
-                content:
-                  typeof result.content === "string"
-                    ? result.content
-                    : JSON.stringify(result.content),
-                tool_call_id: result.tool_use_id,
-              };
-              messages.push(toolMessage);
-            });
-          }
-
-          if (!hasAssistantContent && toolResultContent.length > 0) {
-          }
         }
       }
     });
@@ -207,7 +123,7 @@ export class AnthropicTransformer implements Transformer {
     return result;
   }
 
-  async transformResponseOut(response: Response): Promise<Response> {
+  async transformResponseIn(response: Response): Promise<Response> {
     const isStream = response.headers
       .get("Content-Type")
       ?.includes("text/event-stream");
@@ -344,7 +260,7 @@ export class AnthropicTransformer implements Transformer {
                   const chunk = JSON.parse(data);
                   conversionStats.originalChunks++;
                   totalChunks++;
-                  log(`Original OpenAI data:`, JSON.stringify(chunk, null, 2));
+                  log(`Original Response:`, JSON.stringify(chunk, null, 2));
 
                   model = chunk.model || model;
 
@@ -365,10 +281,6 @@ export class AnthropicTransformer implements Transformer {
                       },
                     };
 
-                    log(
-                      "send message_start event:",
-                      JSON.stringify(messageStart, null, 2)
-                    );
                     safeEnqueue(
                       encoder.encode(
                         `event: message_start\ndata: ${JSON.stringify(
@@ -464,10 +376,6 @@ export class AnthropicTransformer implements Transformer {
                           text: "",
                         },
                       };
-                      log(
-                        "send content_block_start data:",
-                        JSON.stringify(contentBlockStart, null, 2)
-                      );
                       safeEnqueue(
                         encoder.encode(
                           `event: content_block_start\ndata: ${JSON.stringify(
