@@ -1,5 +1,5 @@
 {
-  "name": "llms",
+  "name": "@musistudio/llms",
   "version": "1.0.0",
   "description": "",
   "main": "dist/cjs/server.cjs",
