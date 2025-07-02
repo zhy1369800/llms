@@ -53,6 +53,13 @@ export class ConfigService {
     if (this.options.useEnvironmentVariables) {
       this.loadEnvironmentVariables();
     }
+
+    if (this.config.LOG_FILE) {
+      process.env.LOG_FILE = this.config.LOG_FILE;
+    }
+    if (this.config.LOG) {
+      process.env.LOG = this.config.LOG;
+    }
   }
 
   private loadJsonConfig(): void {
@@ -131,7 +138,7 @@ export class ConfigService {
       this.get("HTTPS_PROXY") ||
       this.get("https_proxy") ||
       this.get("httpsProxy") ||
-      this.get("PROXY_URL") 
+      this.get("PROXY_URL")
     );
   }
 
@@ -170,4 +177,3 @@ export class ConfigService {
     return `Config sources: ${summary.join(", ")}`;
   }
 }
-
