@@ -1,12 +1,12 @@
 import fs from "node:fs";
 
-const LOG_FILE = "app.log";
+const LOG_FILE = process.env.LOG_FILE || "app.log";
 
 
 export function log(...args: any[]) {
   console.log(...args);
   // Check if logging is enabled via environment variable
-  const isLogEnabled = true;
+  const isLogEnabled = process.env.LOG;
 
   if (!isLogEnabled) {
     return;

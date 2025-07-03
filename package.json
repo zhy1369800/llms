@@ -1,7 +1,7 @@
 {
   "name": "@musistudio/llms",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.0.1",
+  "description": "A universal LLM API transformation server",
   "main": "dist/cjs/server.cjs",
   "module": "dist/esm/server.mjs",
   "type": "module",
