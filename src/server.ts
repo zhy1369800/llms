@@ -65,9 +65,7 @@ class Server {
   transformerService: TransformerService;
 
   constructor(options: ServerOptions = {}) {
-    this.configService = new ConfigService({
-      initialConfig: options.initialConfig,
-    });
+    this.configService = new ConfigService(options);
     this.providerService = new ProviderService(this.configService);
     this.llmService = new LLMService(this.providerService);
     this.transformerService = new TransformerService(this.configService);

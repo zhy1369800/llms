@@ -27,7 +27,7 @@ export class ConfigService {
     this.options = {
       envPath: options.envPath || ".env",
       jsonPath: options.jsonPath,
-      useEnvFile: options.useEnvFile !== false,
+      useEnvFile: false,
       useJsonFile: options.useJsonFile !== false,
       useEnvironmentVariables: options.useEnvironmentVariables !== false,
       ...options,
@@ -45,14 +45,13 @@ export class ConfigService {
     if (this.options.useEnvFile) {
       this.loadEnvConfig();
     }
-
     if (this.options.useJsonFile && this.options.jsonPath) {
       this.loadJsonConfig();
     }
 
-    if (this.options.useEnvironmentVariables) {
-      this.loadEnvironmentVariables();
-    }
+    // if (this.options.useEnvironmentVariables) {
+    //   this.loadEnvironmentVariables();
+    // }
 
     if (this.config.LOG_FILE) {
       process.env.LOG_FILE = this.config.LOG_FILE;

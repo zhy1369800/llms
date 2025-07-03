@@ -1,7 +1,13 @@
 import { Transformer } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { ConfigService } from "./config";
-import { AnthropicTransformer, GeminiTransformer, DeepseekTransformer, TooluseTransformer } from "@/transformer";
+import {
+  AnthropicTransformer,
+  GeminiTransformer,
+  DeepseekTransformer,
+  TooluseTransformer,
+  OpenrouterTransformer,
+} from "@/transformer";
 
 interface TransformerConfig {
   transformers: Array<{
@@ -113,10 +119,12 @@ export class TransformerService {
       const gemini = new GeminiTransformer();
       const deepseek = new DeepseekTransformer();
       const tooluse = new TooluseTransformer();
+      const openrouter = new OpenrouterTransformer();
       this.registerTransformer(anthropic.name, anthropic);
       this.registerTransformer(gemini.name, gemini);
       this.registerTransformer(deepseek.name, deepseek);
       this.registerTransformer(tooluse.name, tooluse);
+      this.registerTransformer(openrouter.name, openrouter);
     } catch (error) {
       log("transformer regist error:", error);
     }
