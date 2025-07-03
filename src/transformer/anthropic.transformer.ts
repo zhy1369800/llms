@@ -564,7 +564,7 @@ export class AnthropicTransformer implements Transformer {
                     );
                   }
 
-                  if (hasTextContentStarted && !isClosed) {
+                  if ((hasTextContentStarted || toolCallChunks > 0) && !isClosed) {
                     log("content_block_stop hasTextContentStarted");
                     const contentBlockStop = {
                       type: "content_block_stop",
@@ -579,34 +579,6 @@ export class AnthropicTransformer implements Transformer {
                     );
                   }
 
-                  if (toolCallChunks > 0 && !isClosed) {
-                    for (const [
-                      toolIdx,
-                      blockIdx,
-                    ] of toolCallIndexToContentBlockIndex.entries()) {
-                      if (isClosed) break;
-                      const toolCall = toolCalls.get(toolIdx);
-                      if (toolCall && toolCall.arguments) {
-                        try {
-                          let jsonString = toolCall.arguments.trim();
-                          if (!jsonString.startsWith("{")) {
-                            jsonString = "{" + jsonString;
-                          }
-                          if (!jsonString.endsWith("}")) {
-                            jsonString = jsonString + "}";
-                          }
-                          JSON.parse(jsonString);
-                        } catch (e: any) {
-                          log(
-                            "Tool call final arguments parsing failed:",
-                            e.message,
-                            "original arguments:",
-                            toolCall.arguments
-                          );
-                        }
-                      }
-                    }
-                  }
                   if (!isClosed) {
                     const stopReasonMapping = {
                       stop: "end_turn",
@@ -737,12 +709,12 @@ export class AnthropicTransformer implements Transformer {
         choice.finish_reason === "stop"
           ? "end_turn"
           : choice.finish_reason === "length"
-          ? "max_tokens"
-          : choice.finish_reason === "tool_calls"
-          ? "tool_use"
-          : choice.finish_reason === "content_filter"
-          ? "stop_sequence"
-          : "end_turn",
+            ? "max_tokens"
+            : choice.finish_reason === "tool_calls"
+              ? "tool_use"
+              : choice.finish_reason === "content_filter"
+                ? "stop_sequence"
+                : "end_turn",
       stop_sequence: null,
       usage: {
         input_tokens: openaiResponse.usage?.prompt_tokens || 0,
