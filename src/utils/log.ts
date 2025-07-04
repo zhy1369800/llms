@@ -1,12 +1,9 @@
 import fs from "node:fs";
 
-const LOG_FILE = process.env.LOG_FILE || "app.log";
-
-
 export function log(...args: any[]) {
   console.log(...args);
   // Check if logging is enabled via environment variable
-  const isLogEnabled = process.env.LOG;
+  const isLogEnabled = process.env.LOG === "true";
 
   if (!isLogEnabled) {
     return;
@@ -24,5 +21,6 @@ export function log(...args: any[]) {
   }\n`;
 
   // Append to log file
+  const LOG_FILE = process.env.LOG_FILE || "app.log";
   fs.appendFileSync(LOG_FILE, logMessage, "utf8");
 }
