@@ -47,6 +47,7 @@ Examples:
         jsonResponse?.choices[0]?.message.tool_calls[0]?.function?.name ===
           "ExitTool"
       ) {
+        const toolCall = jsonResponse?.choices[0]?.message.tool_calls[0];
         const toolArguments = JSON.parse(toolCall.function.arguments || "{}");
         jsonResponse.choices[0].message.content = toolArguments.response || "";
         delete jsonResponse.choices[0].message.tool_calls;
