@@ -15,6 +15,9 @@ import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages
 export interface TextContent {
   type: "text";
   text: string;
+  cache_control?: {
+    type?: string
+  }
 }
 
 export interface ImageContent {
@@ -40,6 +43,9 @@ export interface UnifiedMessage {
     };
   }>;
   tool_call_id?: string;
+  cache_control?: {
+    type?: string
+  };
   thinking?: {
     content: string;
     signature?: string;
@@ -132,9 +138,9 @@ export interface OpenAIChatRequest {
   stream?: boolean;
   tools?: ChatCompletionTool[];
   tool_choice?:
-    | "auto"
-    | "none"
-    | { type: "function"; function: { name: string } };
+  | "auto"
+  | "none"
+  | { type: "function"; function: { name: string } };
 }
 
 // Anthropic 特定类型

@@ -11,7 +11,6 @@ export class AnthropicTransformer implements Transformer {
     log("Anthropic Request:", JSON.stringify(request, null, 2));
 
     const messages: UnifiedMessage[] = [];
-    const systemReminders: UnifiedMessage[] = [];
 
     if (request.system) {
       if (typeof request.system === "string") {
@@ -23,10 +22,14 @@ export class AnthropicTransformer implements Transformer {
         const textParts = request.system
           .filter((item: any) => item.type === "text" && item.text)
           .map((item: any) => ({
-            role: "system" as const,
-            content: item.text,
+            type: "text" as const,
+            text: item.text,
+            cache_control: item.cache_control
           }));
-        messages.push(...textParts);
+        messages.push({
+          role: 'system',
+          content: textParts,
+        });
       }
     }
 
@@ -57,6 +60,7 @@ export class AnthropicTransformer implements Transformer {
                       ? tool.content
                       : JSON.stringify(tool.content),
                   tool_call_id: tool.tool_use_id,
+                  cache_control: tool.cache_control,
                 };
                 messages.push(toolMessage);
               });
