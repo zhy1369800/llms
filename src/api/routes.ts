@@ -47,7 +47,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           let requestBody = body;
           let config = {};
           if (typeof transformer.transformRequestOut === "function") {
-            const transformOut = transformer.transformRequestOut(
+            const transformOut = await transformer.transformRequestOut(
               body as UnifiedChatRequest
             );
             if (transformOut.body) {
@@ -57,19 +57,16 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               requestBody = transformOut;
             }
           }
+          log('use transformers:',provider.transformer?.use)
           if (provider.transformer?.use?.length) {
-            for (const transformerName of provider.transformer.use) {
-              const transformer =
-                fastify._server!.transformerService.getTransformer(
-                  transformerName
-                );
+            for (const transformer of provider.transformer.use) {
               if (
                 !transformer ||
                 typeof transformer.transformRequestIn !== "function"
               ) {
                 continue;
               }
-              const transformIn = transformer.transformRequestIn(
+              const transformIn = await transformer.transformRequestIn(
                 requestBody,
                 provider
               );
@@ -82,19 +79,14 @@ export const registerApiRoutes: FastifyPluginAsync = async (
             }
           }
           if (provider.transformer?.[req.body.model]?.use?.length) {
-            for (const transformerName of provider.transformer[req.body.model]
-              .use) {
-              const transformer =
-                fastify._server!.transformerService.getTransformer(
-                  transformerName
-                );
+            for (const transformer of provider.transformer[req.body.model].use) {
               if (
                 !transformer ||
                 typeof transformer.transformRequestIn !== "function"
               ) {
                 continue;
               }
-              requestBody = transformer.transformRequestIn(
+              requestBody = await transformer.transformRequestIn(
                 requestBody,
                 provider
               );
@@ -120,11 +112,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           }
           let finalResponse = response;
           if (provider.transformer?.use?.length) {
-            for (const transformerName of provider.transformer.use) {
-              const transformer =
-                fastify._server!.transformerService.getTransformer(
-                  transformerName
-                );
+            for (const transformer of provider.transformer.use) {
               if (
                 !transformer ||
                 typeof transformer.transformResponseOut !== "function"
@@ -137,12 +125,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
             }
           }
           if (provider.transformer?.[req.body.model]?.use?.length) {
-            for (const transformerName of provider.transformer[req.body.model]
-              .use) {
-              const transformer =
-                fastify._server!.transformerService.getTransformer(
-                  transformerName
-                );
+            for (const transformer of provider.transformer[req.body.model].use) {
               if (
                 !transformer ||
                 typeof transformer.transformResponseOut !== "function"
@@ -365,9 +348,8 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         return reply.code(404).send({ error: "Provider not found" });
       }
       return {
-        message: `Provider ${
-          request.body.enabled ? "enabled" : "disabled"
-        } successfully`,
+        message: `Provider ${request.body.enabled ? "enabled" : "disabled"
+          } successfully`,
       };
     }
   );

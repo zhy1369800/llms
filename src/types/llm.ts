@@ -10,6 +10,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages";
+import { Transformer } from "./transformer";
 
 // 内容类型定义
 export interface TextContent {
@@ -161,15 +162,18 @@ export interface ConversionOptions {
   sourceProvider: "openai" | "anthropic";
 }
 
-// 服务商注册相关类型
+
 export interface LLMProvider {
   name: string;
   baseUrl: string;
   apiKey: string;
   models: string[];
   transformer?: {
-    use?: string[];
-    [key: string]: any;
+    [key: string]: {
+      use?: Transformer[];
+    };
+  } & {
+    use?: Transformer[];
   };
 }
 
@@ -192,4 +196,11 @@ export interface ConfigProvider {
   api_base_url: string;
   api_key: string;
   models: string[];
+  transformer: {
+    use?: string[] | Array<any>[];
+  } & {
+    [key: string]: {
+      use?: string[] | Array<any>[];
+    }
+  };
 }

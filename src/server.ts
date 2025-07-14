@@ -66,9 +66,11 @@ class Server {
 
   constructor(options: ServerOptions = {}) {
     this.configService = new ConfigService(options);
-    this.providerService = new ProviderService(this.configService);
-    this.llmService = new LLMService(this.providerService);
     this.transformerService = new TransformerService(this.configService);
+    this.transformerService.initialize().finally(() => {
+      this.providerService = new ProviderService(this.configService, this.transformerService);
+      this.llmService = new LLMService(this.providerService);
+    })
     this.app = createApp();
   }
 

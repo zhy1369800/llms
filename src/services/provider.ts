@@ -1,3 +1,4 @@
+import { TransformerConstructor } from "@/types/transformer";
 import {
   LLMProvider,
   RegisterProviderRequest,
@@ -7,12 +8,13 @@ import {
 } from "../types/llm";
 import { log } from "../utils/log";
 import { ConfigService } from "./config";
+import { TransformerService } from "./transformer";
 
 export class ProviderService {
   private providers: Map<string, LLMProvider> = new Map();
   private modelRoutes: Map<string, ModelRoute> = new Map();
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(private readonly configService: ConfigService, private readonly transformerService: TransformerService) {
     this.initializeCustomProviders();
   }
 
@@ -36,13 +38,51 @@ export class ProviderService {
           return;
         }
 
+        const transformer: LLMProvider["transformer"] = {}
+
+        if (providerConfig.transformer) {
+          Object.keys(providerConfig.transformer).forEach(key => {
+            if (key === 'use') {
+              if (Array.isArray(providerConfig.transformer.use)) {
+                transformer.use = providerConfig.transformer.use.map((transformer) => {
+                  if (Array.isArray(transformer) && typeof transformer[0] === 'string') {
+                    const Constructor = this.transformerService.getTransformer(transformer[0]);
+                    if (Constructor) {
+                      return new (Constructor as TransformerConstructor)(transformer[1]);
+                    }
+                  }
+                  if (typeof transformer === 'string') {
+                    return this.transformerService.getTransformer(transformer);
+                  }
+                }).filter((transformer) => typeof transformer !== 'undefined');
+              }
+            } else {
+              if (Array.isArray(providerConfig.transformer[key]?.use)) {
+                transformer[key] = {
+                  use: providerConfig.transformer[key].use.map((transformer) => {
+                    if (Array.isArray(transformer) && typeof transformer[0] === 'string') {
+                      const Constructor = this.transformerService.getTransformer(transformer[0]);
+                      if (Constructor) {
+                        return new (Constructor as TransformerConstructor)(transformer[1]);
+                      }
+                    }
+                    if (typeof transformer === 'string') {
+                      return this.transformerService.getTransformer(transformer);
+                    }
+                  }).filter((transformer) => typeof transformer !== 'undefined')
+                }
+              }
+            }
+          })
+        }
+        console.log('providerConfig: ', providerConfig.name, transformer.use)
+
         this.registerProvider({
           name: providerConfig.name,
           baseUrl: providerConfig.api_base_url,
           apiKey: providerConfig.api_key,
           models: providerConfig.models || [],
-          transformer:
-            this.parseTransformerConfig(providerConfig.transformer) || {},
+          transformer: providerConfig.transformer ? transformer : undefined,
         });
 
         log(`${providerConfig.name} provider registered`);
@@ -108,9 +148,9 @@ export class ProviderService {
       });
 
       updates.models.forEach((model) => {
-        const fullModel = `${provider.id},${model}`;
+        const fullModel = `${provider.name},${model}`;
         const route: ModelRoute = {
-          providerId: provider.id,
+          provider: provider.name,
           model,
           fullModel,
         };
@@ -131,7 +171,7 @@ export class ProviderService {
     }
 
     provider.models.forEach((model) => {
-      const fullModel = `${provider.id},${model}`;
+      const fullModel = `${provider.name},${model}`;
       this.modelRoutes.delete(fullModel);
       this.modelRoutes.delete(model);
     });
@@ -140,14 +180,11 @@ export class ProviderService {
     return true;
   }
 
-  toggleProvider(id: string, enabled: boolean): boolean {
-    const provider = this.providers.get(id);
+  toggleProvider(name: string, enabled: boolean): boolean {
+    const provider = this.providers.get(name);
     if (!provider) {
       return false;
     }
-
-    provider.enabled = enabled;
-    provider.updatedAt = new Date();
     return true;
   }
 
@@ -157,8 +194,8 @@ export class ProviderService {
       return null;
     }
 
-    const provider = this.providers.get(route.providerId);
-    if (!provider || !provider.enabled) {
+    const provider = this.providers.get(route.provider);
+    if (!provider) {
       return null;
     }
 
@@ -172,12 +209,10 @@ export class ProviderService {
   getAvailableModelNames(): string[] {
     const modelNames: string[] = [];
     this.providers.forEach((provider) => {
-      if (provider.enabled) {
-        provider.models.forEach((model) => {
-          modelNames.push(model);
-          modelNames.push(`${provider.id},${model}`);
-        });
-      }
+      provider.models.forEach((model) => {
+        modelNames.push(model);
+        modelNames.push(`${provider.name},${model}`);
+      });
     });
     return modelNames;
   }
@@ -209,7 +244,6 @@ export class ProviderService {
     data: Array<{
       id: string;
       object: string;
-      created: number;
       owned_by: string;
       provider: string;
     }>;
@@ -217,31 +251,26 @@ export class ProviderService {
     const models: Array<{
       id: string;
       object: string;
-      created: number;
       owned_by: string;
       provider: string;
     }> = [];
 
     this.providers.forEach((provider) => {
-      if (provider.enabled) {
-        provider.models.forEach((model) => {
-          models.push({
-            id: model,
-            object: "model",
-            created: Math.floor(provider.createdAt.getTime() / 1000),
-            owned_by: provider.name,
-            provider: provider.name,
-          });
-
-          models.push({
-            id: `${provider.id},${model}`,
-            object: "model",
-            created: Math.floor(provider.createdAt.getTime() / 1000),
-            owned_by: provider.name,
-            provider: provider.id,
-          });
+      provider.models.forEach((model) => {
+        models.push({
+          id: model,
+          object: "model",
+          owned_by: provider.name,
+          provider: provider.name,
         });
-      }
+
+        models.push({
+          id: `${provider.name},${model}`,
+          object: "model",
+          owned_by: provider.name,
+          provider: provider.name,
+        });
+      });
     });
 
     return {

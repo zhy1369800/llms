@@ -1,13 +1,8 @@
-import { Transformer } from "@/types/transformer";
+import { Transformer, TransformerConstructor } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { ConfigService } from "./config";
-import {
-  AnthropicTransformer,
-  GeminiTransformer,
-  DeepseekTransformer,
-  TooluseTransformer,
-  OpenrouterTransformer,
-} from "@/transformer";
+import Transformers from "@/transformer";
+import Module from "node:module";
 
 interface TransformerConfig {
   transformers: Array<{
@@ -19,28 +14,26 @@ interface TransformerConfig {
 }
 
 export class TransformerService {
-  private transformers: Map<string, Transformer> = new Map();
+  private transformers: Map<string, Transformer | TransformerConstructor> = new Map();
 
   constructor(private readonly configService: ConfigService) {
-    this.initialize();
   }
 
   registerTransformer(name: string, transformer: Transformer): void {
     this.transformers.set(name, transformer);
     log(
-      `register transformer: ${name}${
-        transformer.endPoint
-          ? ` (endpoint: ${transformer.endPoint})`
-          : " (no endpoint)"
+      `register transformer: ${name}${transformer.endPoint
+        ? ` (endpoint: ${transformer.endPoint})`
+        : " (no endpoint)"
       }`
     );
   }
 
-  getTransformer(name: string): Transformer | undefined {
+  getTransformer(name: string): Transformer | TransformerConstructor | undefined {
     return this.transformers.get(name);
   }
 
-  getAllTransformers(): Map<string, Transformer> {
+  getAllTransformers(): Map<string, Transformer | TransformerConstructor> {
     return new Map(this.transformers);
   }
 
@@ -84,8 +77,19 @@ export class TransformerService {
     options?: any;
   }): Promise<boolean> {
     try {
+      // @ts-ignore
+      const originalLoad = Module._load;
+      // @ts-ignore
+      Module._load = function (request, parent, isMain) {
+        if (request === "claude-code-router") {
+          return {
+            log,
+          };
+        }
+        return originalLoad.apply(Module, arguments);
+      };
       if (config.path) {
-        const module = require(config.path);
+        const module = require(require.resolve(config.path));
         if (module) {
           const instance = new module(config.options);
           if (!instance.name) {
@@ -98,13 +102,13 @@ export class TransformerService {
         }
       }
       return false;
-    } catch (error) {
-      log(`load transformer (${config.path}):`, error);
+    } catch (error: any) {
+      log(`load transformer (${config.path}) error:`, error.message, error.stack);
       return false;
     }
   }
 
-  private async initialize(): Promise<void> {
+  async initialize(): Promise<void> {
     try {
       await this.registerDefaultTransformersInternal();
       await this.loadFromConfig();
@@ -115,16 +119,15 @@ export class TransformerService {
 
   private async registerDefaultTransformersInternal(): Promise<void> {
     try {
-      const anthropic = new AnthropicTransformer();
-      const gemini = new GeminiTransformer();
-      const deepseek = new DeepseekTransformer();
-      const tooluse = new TooluseTransformer();
-      const openrouter = new OpenrouterTransformer();
-      this.registerTransformer(anthropic.name, anthropic);
-      this.registerTransformer(gemini.name, gemini);
-      this.registerTransformer(deepseek.name, deepseek);
-      this.registerTransformer(tooluse.name, tooluse);
-      this.registerTransformer(openrouter.name, openrouter);
+      Object.values(Transformers)
+        .forEach((TransformerStatic: TransformerConstructor) => {
+          if ('TransformerName' in TransformerStatic && typeof TransformerStatic.TransformerName === 'string') {
+            this.registerTransformer(TransformerStatic.TransformerName, TransformerStatic);
+          } else {
+            const transformerInstance = new TransformerStatic();
+            this.registerTransformer(transformerInstance.name!, transformerInstance);
+          }
+        })
     } catch (error) {
       log("transformer regist error:", error);
     }
