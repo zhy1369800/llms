@@ -24,8 +24,6 @@ export class OpenrouterTransformer implements Transformer {
   async transformResponseOut(response: Response): Promise<Response> {
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse = await response.json();
-
-      // Handle non-streaming response if needed
       return new Response(JSON.stringify(jsonResponse), {
         status: response.status,
         statusText: response.statusText,
@@ -42,6 +40,7 @@ export class OpenrouterTransformer implements Transformer {
       let hasTextContent = false;
       let reasoningContent = "";
       let isReasoningComplete = false;
+      let buffer = ""; // 用于缓冲不完整的数据
 
       const stream = new ReadableStream({
         async start(controller) {
@@ -49,103 +48,44 @@ export class OpenrouterTransformer implements Transformer {
           try {
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+              if (done) {
+                // 处理缓冲区中剩余的数据
+                if (buffer.trim()) {
+                  this.processBuffer(buffer, controller, encoder);
+                }
+                break;
+              }
+              
               const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split("\n");
+              buffer += chunk;
+              
+              // 处理缓冲区中完整的数据行
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || ""; // 最后一行可能不完整，保留在缓冲区
+              
               for (const line of lines) {
-                if (
-                  line.startsWith("data: ") &&
-                  line.trim() !== "data: [DONE]"
-                ) {
-                  try {
-                    const data = JSON.parse(line.slice(6));
-
-                    if (data.choices[0]?.delta?.content && !hasTextContent) {
-                      hasTextContent = true;
-                    }
-
-                    // Extract reasoning_content from delta
-                    if (data.choices?.[0]?.delta?.reasoning) {
-                      reasoningContent += data.choices[0].delta.reasoning;
-                      const thinkingChunk = {
-                        ...data,
-                        choices: [
-                          {
-                            ...data.choices[0],
-                            delta: {
-                              ...data.choices[0].delta,
-                              thinking: {
-                                content: data.choices[0].delta.reasoning,
-                              },
-                            },
-                          },
-                        ],
-                      };
-                      delete thinkingChunk.choices[0].delta.reasoning;
-                      const thinkingLine = `data: ${JSON.stringify(
-                        thinkingChunk
-                      )}\n\n`;
-                      controller.enqueue(encoder.encode(thinkingLine));
-                      continue;
-                    }
-
-                    // Check if reasoning is complete (when delta has content but no reasoning_content)
-                    if (
-                      data.choices?.[0]?.delta?.content &&
-                      reasoningContent &&
-                      !isReasoningComplete
-                    ) {
-                      isReasoningComplete = true;
-                      const signature = Date.now().toString();
-
-                      // Create a new chunk with thinking block
-                      const thinkingChunk = {
-                        ...data,
-                        choices: [
-                          {
-                            ...data.choices[0],
-                            delta: {
-                              ...data.choices[0].delta,
-                              content: null,
-                              thinking: {
-                                content: reasoningContent,
-                                signature: signature,
-                              },
-                            },
-                          },
-                        ],
-                      };
-                      delete thinkingChunk.choices[0].delta.reasoning;
-                      // Send the thinking chunk
-                      const thinkingLine = `data: ${JSON.stringify(
-                        thinkingChunk
-                      )}\n\n`;
-                      controller.enqueue(encoder.encode(thinkingLine));
-                    }
-
-                    if (data.choices[0]?.delta?.reasoning) {
-                      delete data.choices[0].delta.reasoning;
-                    }
-
-                    if (
-                      data.choices[0]?.delta?.tool_calls?.length &&
-                      hasTextContent
-                    ) {
-                      data.choices[0].index += 1;
-                    }
-                    const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
-                    controller.enqueue(encoder.encode(modifiedLine));
-                  } catch (e) {
-                    // If JSON parsing fails, pass through the original line
-                    controller.enqueue(encoder.encode(line + "\n"));
-                  }
-                } else {
-                  // Pass through non-data lines (like [DONE])
+                if (!line.trim()) continue;
+                
+                try {
+                  this.processLine(line, {
+                    controller,
+                    encoder,
+                    hasTextContent: () => hasTextContent,
+                    setHasTextContent: (val) => hasTextContent = val,
+                    reasoningContent: () => reasoningContent,
+                    appendReasoningContent: (content) => reasoningContent += content,
+                    isReasoningComplete: () => isReasoningComplete,
+                    setReasoningComplete: (val) => isReasoningComplete = val
+                  });
+                } catch (error) {
+                  console.error("Error processing line:", line, error);
+                  // 如果解析失败，直接传递原始行
                   controller.enqueue(encoder.encode(line + "\n"));
                 }
               }
             }
           } catch (error) {
+            console.error("Stream error:", error);
             controller.error(error);
           } finally {
             try {
@@ -156,8 +96,114 @@ export class OpenrouterTransformer implements Transformer {
             controller.close();
           }
         },
+        
+        processBuffer(buffer: string, controller: ReadableStreamDefaultController, encoder: TextEncoder) {
+          const lines = buffer.split("\n");
+          for (const line of lines) {
+            if (line.trim()) {
+              controller.enqueue(encoder.encode(line + "\n"));
+            }
+          }
+        },
+        
+        processLine(line: string, context: {
+          controller: ReadableStreamDefaultController;
+          encoder: TextEncoder;
+          hasTextContent: () => boolean;
+          setHasTextContent: (val: boolean) => void;
+          reasoningContent: () => string;
+          appendReasoningContent: (content: string) => void;
+          isReasoningComplete: () => boolean;
+          setReasoningComplete: (val: boolean) => void;
+        }) {
+          const { controller, encoder } = context;
+          
+          if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
+            const jsonStr = line.slice(6);
+            try {
+              const data = JSON.parse(jsonStr);
+              
+              if (data.choices[0]?.delta?.content && !context.hasTextContent()) {
+                context.setHasTextContent(true);
+              }
+              
+              // Extract reasoning_content from delta
+              if (data.choices?.[0]?.delta?.reasoning) {
+                context.appendReasoningContent(data.choices[0].delta.reasoning);
+                const thinkingChunk = {
+                  ...data,
+                  choices: [
+                    {
+                      ...data.choices[0],
+                      delta: {
+                        ...data.choices[0].delta,
+                        thinking: {
+                          content: data.choices[0].delta.reasoning,
+                        },
+                      },
+                    },
+                  ],
+                };
+                delete thinkingChunk.choices[0].delta.reasoning;
+                const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
+                controller.enqueue(encoder.encode(thinkingLine));
+                return;
+              }
+              
+              // Check if reasoning is complete
+              if (
+                data.choices?.[0]?.delta?.content &&
+                context.reasoningContent() &&
+                !context.isReasoningComplete()
+              ) {
+                context.setReasoningComplete(true);
+                const signature = Date.now().toString();
+                
+                const thinkingChunk = {
+                  ...data,
+                  choices: [
+                    {
+                      ...data.choices[0],
+                      delta: {
+                        ...data.choices[0].delta,
+                        content: null,
+                        thinking: {
+                          content: context.reasoningContent(),
+                          signature: signature,
+                        },
+                      },
+                    },
+                  ],
+                };
+                delete thinkingChunk.choices[0].delta.reasoning;
+                const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
+                controller.enqueue(encoder.encode(thinkingLine));
+              }
+              
+              if (data.choices[0]?.delta?.reasoning) {
+                delete data.choices[0].delta.reasoning;
+              }
+              
+              if (
+                data.choices[0]?.delta?.tool_calls?.length &&
+                context.hasTextContent()
+              ) {
+                data.choices[0].index += 1;
+              }
+              
+              const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder.encode(modifiedLine));
+            } catch (e) {
+              // 如果JSON解析失败，可能是数据不完整，将原始行传递下去
+              controller.enqueue(encoder.encode(line + "\n"));
+            }
+          } else {
+            // Pass through non-data lines (like [DONE])
+            controller.enqueue(encoder.encode(line + "\n"));
+          }
+        }
       });
-
+      
       return new Response(stream, {
         status: response.status,
         statusText: response.statusText,
@@ -168,7 +214,7 @@ export class OpenrouterTransformer implements Transformer {
         },
       });
     }
-
+    
     return response;
   }
 }
