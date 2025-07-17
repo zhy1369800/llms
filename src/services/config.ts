@@ -37,16 +37,16 @@ export class ConfigService {
   }
 
   private loadConfig(): void {
-    // Load initial config first if provided
+    if (this.options.useJsonFile && this.options.jsonPath) {
+      this.loadJsonConfig();
+    }
+
     if (this.options.initialConfig) {
       this.config = { ...this.config, ...this.options.initialConfig };
     }
 
     if (this.options.useEnvFile) {
       this.loadEnvConfig();
-    }
-    if (this.options.useJsonFile && this.options.jsonPath) {
-      this.loadJsonConfig();
     }
 
     // if (this.options.useEnvironmentVariables) {

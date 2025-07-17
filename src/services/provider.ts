@@ -75,7 +75,6 @@ export class ProviderService {
             }
           })
         }
-        console.log('providerConfig: ', providerConfig.name, transformer.use)
 
         this.registerProvider({
           name: providerConfig.name,
