@@ -76,37 +76,33 @@ export class AnthropicTransformer implements Transformer {
               });
             }
           } else if (msg.role === "assistant") {
+            const assistantMessage: UnifiedMessage = {
+              role: 'assistant',
+              content: null,
+            }
             const textParts = msg.content.filter(
               (c: any) => c.type === "text" && c.text
             );
             if (textParts.length) {
-              messages.push(
-                ...textParts.map((text: any) => ({
-                  role: "assistant",
-                  content: text.text,
-                }))
-              );
+              assistantMessage.content = textParts.map((text: any) => text.text).join('\n');
             }
 
             const toolCallParts = msg.content.filter(
               (c: any) => c.type === "tool_use" && c.id
             );
             if (toolCallParts.length) {
-              messages.push({
-                role: "assistant" as const,
-                content: null,
-                tool_calls: toolCallParts.map((tool: any) => {
-                  return {
-                    id: tool.id,
-                    type: "function" as const,
-                    function: {
-                      name: tool.name,
-                      arguments: JSON.stringify(tool.input || {}),
-                    },
-                  };
-                }),
-              });
+              assistantMessage.tool_calls = toolCallParts.map((tool: any) => {
+                return {
+                  id: tool.id,
+                  type: "function" as const,
+                  function: {
+                    name: tool.name,
+                    arguments: JSON.stringify(tool.input || {}),
+                  },
+                };
+              })
             }
+            messages.push(assistantMessage);
           }
           return;
         }
@@ -255,6 +251,24 @@ export class AnthropicTransformer implements Transformer {
                 const chunk = JSON.parse(data);
                 totalChunks++;
                 log(`Original Response:`, JSON.stringify(chunk, null, 2));
+                if (chunk.error) {
+                  const errorMessage = {
+                    type: "error",
+                    message: {
+                      type: "api_error",
+                      message: JSON.stringify(chunk.error)
+                    },
+                  };
+
+                  safeEnqueue(
+                    encoder.encode(
+                      `event: error\ndata: ${JSON.stringify(
+                        errorMessage
+                      )}\n\n`
+                    )
+                  );
+                  continue;
+                }
 
                 model = chunk.model || model;
 

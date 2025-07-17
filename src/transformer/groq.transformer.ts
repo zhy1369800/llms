@@ -1,21 +1,25 @@
 import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
 import { Transformer } from "../types/transformer";
+import { v4 as uuidv4 } from "uuid"
 
-export class OpenrouterTransformer implements Transformer {
-  name = "openrouter";
+export class GroqTransformer implements Transformer {
+  name = "groq";
 
-  transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
-    if (!request.model.includes('claude')) {
-      request.messages.forEach(msg => {
-        if (Array.isArray(msg.content)) {
-          (msg.content as MessageContent[]).forEach((item) => {
-            if ((item as TextContent).cache_control) {
-              delete (item as TextContent).cache_control;
-            }
-          });
-        } else if (msg.cache_control) {
-          delete msg.cache_control;
-        }
+  async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
+    request.messages.forEach(msg => {
+      if (Array.isArray(msg.content)) {
+        (msg.content as MessageContent[]).forEach((item) => {
+          if ((item as TextContent).cache_control) {
+            delete (item as TextContent).cache_control;
+          }
+        });
+      } else if (msg.cache_control) {
+        delete msg.cache_control;
+      }
+    })
+    if (Array.isArray(request.tools)) {
+      request.tools.forEach(tool => {
+        delete tool.function.parameters.$schema;
       })
     }
     return request
@@ -45,7 +49,7 @@ export class OpenrouterTransformer implements Transformer {
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
-          const processBuffer = (buffer: string, controller: ReadableStreamDefaultController, encoder: TextEncoder) => {
+          const processBuffer = (buffer: string, controller: ReadableStreamDefaultController, encoder: InstanceType<typeof TextEncoder>) => {
             const lines = buffer.split("\n");
             for (const line of lines) {
               if (line.trim()) {
@@ -56,7 +60,7 @@ export class OpenrouterTransformer implements Transformer {
 
           const processLine = (line: string, context: {
             controller: ReadableStreamDefaultController;
-            encoder: TextEncoder;
+            encoder: typeof TextEncoder;
             hasTextContent: () => boolean;
             setHasTextContent: (val: boolean) => void;
             reasoningContent: () => string;
@@ -65,77 +69,27 @@ export class OpenrouterTransformer implements Transformer {
             setReasoningComplete: (val: boolean) => void;
           }) => {
             const { controller, encoder } = context;
-            
+
             if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               const jsonStr = line.slice(6);
               try {
                 const data = JSON.parse(jsonStr);
-                
+                if (data.error) {
+                  throw new Error(JSON.stringify(data));
+                }
+
                 if (data.choices?.[0]?.delta?.content && !context.hasTextContent()) {
                   context.setHasTextContent(true);
                 }
-                
-                // Extract reasoning_content from delta
-                if (data.choices?.[0]?.delta?.reasoning) {
-                  context.appendReasoningContent(data.choices[0].delta.reasoning);
-                  const thinkingChunk = {
-                    ...data,
-                    choices: [
-                      {
-                        ...data.choices?.[0],
-                        delta: {
-                          ...data.choices[0].delta,
-                          thinking: {
-                            content: data.choices[0].delta.reasoning,
-                          },
-                        },
-                      },
-                    ],
-                  };
-                  if (thinkingChunk.choices?.[0]?.delta) {
-                    delete thinkingChunk.choices[0].delta.reasoning;
-                  }
-                  const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
-                  controller.enqueue(encoder.encode(thinkingLine));
-                  return;
-                }
-                
-                // Check if reasoning is complete
+
                 if (
-                  data.choices?.[0]?.delta?.content &&
-                  context.reasoningContent() &&
-                  !context.isReasoningComplete()
+                  data.choices?.[0]?.delta?.tool_calls?.length
                 ) {
-                  context.setReasoningComplete(true);
-                  const signature = Date.now().toString();
-                  
-                  const thinkingChunk = {
-                    ...data,
-                    choices: [
-                      {
-                        ...data.choices?.[0],
-                        delta: {
-                          ...data.choices[0].delta,
-                          content: null,
-                          thinking: {
-                            content: context.reasoningContent(),
-                            signature: signature,
-                          },
-                        },
-                      },
-                    ],
-                  };
-                  if (thinkingChunk.choices?.[0]?.delta) {
-                    delete thinkingChunk.choices[0].delta.reasoning;
-                  }
-                  const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
-                  controller.enqueue(encoder.encode(thinkingLine));
+                  data.choices?.[0]?.delta?.tool_calls.forEach((tool: any) => {
+                    tool.id = `call_${uuidv4()}`;
+                  })
                 }
-                
-                if (data.choices?.[0]?.delta?.reasoning) {
-                  delete data.choices[0].delta.reasoning;
-                }
-                
+
                 if (
                   data.choices?.[0]?.delta?.tool_calls?.length &&
                   context.hasTextContent()
@@ -146,7 +100,7 @@ export class OpenrouterTransformer implements Transformer {
                     data.choices[0].index = 1;
                   }
                 }
-                
+
                 const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
                 controller.enqueue(encoder.encode(modifiedLine));
               } catch (e) {
@@ -169,12 +123,12 @@ export class OpenrouterTransformer implements Transformer {
                 }
                 break;
               }
-              
+
               // 检查value是否有效
               if (!value || value.length === 0) {
                 continue;
               }
-              
+
               let chunk;
               try {
                 chunk = decoder.decode(value, { stream: true });
@@ -182,19 +136,19 @@ export class OpenrouterTransformer implements Transformer {
                 console.warn("Failed to decode chunk", decodeError);
                 continue;
               }
-              
+
               if (chunk.length === 0) {
                 continue;
               }
-              
+
               buffer += chunk;
-              
+
               // 如果缓冲区过大，进行处理避免内存泄漏
               if (buffer.length > 1000000) { // 1MB 限制
                 console.warn("Buffer size exceeds limit, processing partial data");
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || "";
-                
+
                 for (const line of lines) {
                   if (line.trim()) {
                     try {
@@ -217,14 +171,14 @@ export class OpenrouterTransformer implements Transformer {
                 }
                 continue;
               }
-              
+
               // 处理缓冲区中完整的数据行
               const lines = buffer.split("\n");
               buffer = lines.pop() || ""; // 最后一行可能不完整，保留在缓冲区
-              
+
               for (const line of lines) {
                 if (!line.trim()) continue;
-                
+
                 try {
                   processLine(line, {
                     controller,
@@ -255,9 +209,9 @@ export class OpenrouterTransformer implements Transformer {
             controller.close();
           }
         },
-        
+
       });
-      
+
       return new Response(stream, {
         status: response.status,
         statusText: response.statusText,
@@ -268,7 +222,7 @@ export class OpenrouterTransformer implements Transformer {
         },
       });
     }
-    
+
     return response;
   }
 }
