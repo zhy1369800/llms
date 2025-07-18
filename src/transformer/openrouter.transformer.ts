@@ -1,12 +1,14 @@
 import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
 import { Transformer } from "../types/transformer";
+import { log } from "../utils/log";
+import { v4 as uuidv4 } from 'uuid';
 
 export class OpenrouterTransformer implements Transformer {
   name = "openrouter";
 
   transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
-    if (!request.model.includes('claude')) {
-      request.messages.forEach(msg => {
+    if (!request.model.includes("claude")) {
+      request.messages.forEach((msg) => {
         if (Array.isArray(msg.content)) {
           (msg.content as MessageContent[]).forEach((item) => {
             if ((item as TextContent).cache_control) {
@@ -16,9 +18,9 @@ export class OpenrouterTransformer implements Transformer {
         } else if (msg.cache_control) {
           delete msg.cache_control;
         }
-      })
+      });
     }
-    return request
+    return request;
   }
 
   async transformResponseOut(response: Response): Promise<Response> {
@@ -40,12 +42,17 @@ export class OpenrouterTransformer implements Transformer {
       let hasTextContent = false;
       let reasoningContent = "";
       let isReasoningComplete = false;
+      let hasToolCall = false;
       let buffer = ""; // 用于缓冲不完整的数据
 
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
-          const processBuffer = (buffer: string, controller: ReadableStreamDefaultController, encoder: TextEncoder) => {
+          const processBuffer = (
+            buffer: string,
+            controller: ReadableStreamDefaultController,
+            encoder: TextEncoder
+          ) => {
             const lines = buffer.split("\n");
             for (const line of lines) {
               if (line.trim()) {
@@ -54,30 +61,44 @@ export class OpenrouterTransformer implements Transformer {
             }
           };
 
-          const processLine = (line: string, context: {
-            controller: ReadableStreamDefaultController;
-            encoder: TextEncoder;
-            hasTextContent: () => boolean;
-            setHasTextContent: (val: boolean) => void;
-            reasoningContent: () => string;
-            appendReasoningContent: (content: string) => void;
-            isReasoningComplete: () => boolean;
-            setReasoningComplete: (val: boolean) => void;
-          }) => {
+          const processLine = (
+            line: string,
+            context: {
+              controller: ReadableStreamDefaultController;
+              encoder: TextEncoder;
+              hasTextContent: () => boolean;
+              setHasTextContent: (val: boolean) => void;
+              reasoningContent: () => string;
+              appendReasoningContent: (content: string) => void;
+              isReasoningComplete: () => boolean;
+              setReasoningComplete: (val: boolean) => void;
+            }
+          ) => {
             const { controller, encoder } = context;
-            
+
             if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               const jsonStr = line.slice(6);
               try {
                 const data = JSON.parse(jsonStr);
-                
-                if (data.choices?.[0]?.delta?.content && !context.hasTextContent()) {
+                if (data.usage) {
+                  log('usage', data.usage, hasToolCall);
+                  data.choices[0].finish_reason = hasToolCall
+                    ? "tool_calls"
+                    : "stop";
+                }
+
+                if (
+                  data.choices?.[0]?.delta?.content &&
+                  !context.hasTextContent()
+                ) {
                   context.setHasTextContent(true);
                 }
-                
+
                 // Extract reasoning_content from delta
                 if (data.choices?.[0]?.delta?.reasoning) {
-                  context.appendReasoningContent(data.choices[0].delta.reasoning);
+                  context.appendReasoningContent(
+                    data.choices[0].delta.reasoning
+                  );
                   const thinkingChunk = {
                     ...data,
                     choices: [
@@ -95,11 +116,13 @@ export class OpenrouterTransformer implements Transformer {
                   if (thinkingChunk.choices?.[0]?.delta) {
                     delete thinkingChunk.choices[0].delta.reasoning;
                   }
-                  const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
+                  const thinkingLine = `data: ${JSON.stringify(
+                    thinkingChunk
+                  )}\n\n`;
                   controller.enqueue(encoder.encode(thinkingLine));
                   return;
                 }
-                
+
                 // Check if reasoning is complete
                 if (
                   data.choices?.[0]?.delta?.content &&
@@ -108,7 +131,7 @@ export class OpenrouterTransformer implements Transformer {
                 ) {
                   context.setReasoningComplete(true);
                   const signature = Date.now().toString();
-                  
+
                   const thinkingChunk = {
                     ...data,
                     choices: [
@@ -128,25 +151,43 @@ export class OpenrouterTransformer implements Transformer {
                   if (thinkingChunk.choices?.[0]?.delta) {
                     delete thinkingChunk.choices[0].delta.reasoning;
                   }
-                  const thinkingLine = `data: ${JSON.stringify(thinkingChunk)}\n\n`;
+                  const thinkingLine = `data: ${JSON.stringify(
+                    thinkingChunk
+                  )}\n\n`;
                   controller.enqueue(encoder.encode(thinkingLine));
                 }
-                
+
                 if (data.choices?.[0]?.delta?.reasoning) {
                   delete data.choices[0].delta.reasoning;
                 }
-                
+                if (
+                  data.choices?.[0]?.delta?.tool_calls?.length && 
+                  !Number.isNaN(parseInt(data.choices?.[0]?.delta?.tool_calls[0].id, 10))
+                ) {
+                  data.choices?.[0]?.delta?.tool_calls.forEach((tool: any) => {
+                    tool.id = `call_${uuidv4()}`;
+                  })
+                }
+
+                if (
+                  data.choices?.[0]?.delta?.tool_calls?.length &&
+                  !hasToolCall
+                ) {
+                  log('hasToolCall', true);
+                  hasToolCall = true;
+                }
+
                 if (
                   data.choices?.[0]?.delta?.tool_calls?.length &&
                   context.hasTextContent()
                 ) {
-                  if (typeof data.choices[0].index === 'number') {
+                  if (typeof data.choices[0].index === "number") {
                     data.choices[0].index += 1;
                   } else {
                     data.choices[0].index = 1;
                   }
                 }
-                
+
                 const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
                 controller.enqueue(encoder.encode(modifiedLine));
               } catch (e) {
@@ -169,12 +210,12 @@ export class OpenrouterTransformer implements Transformer {
                 }
                 break;
               }
-              
+
               // 检查value是否有效
               if (!value || value.length === 0) {
                 continue;
               }
-              
+
               let chunk;
               try {
                 chunk = decoder.decode(value, { stream: true });
@@ -182,19 +223,22 @@ export class OpenrouterTransformer implements Transformer {
                 console.warn("Failed to decode chunk", decodeError);
                 continue;
               }
-              
+
               if (chunk.length === 0) {
                 continue;
               }
-              
+
               buffer += chunk;
-              
+
               // 如果缓冲区过大，进行处理避免内存泄漏
-              if (buffer.length > 1000000) { // 1MB 限制
-                console.warn("Buffer size exceeds limit, processing partial data");
+              if (buffer.length > 1000000) {
+                // 1MB 限制
+                console.warn(
+                  "Buffer size exceeds limit, processing partial data"
+                );
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || "";
-                
+
                 for (const line of lines) {
                   if (line.trim()) {
                     try {
@@ -202,11 +246,13 @@ export class OpenrouterTransformer implements Transformer {
                         controller,
                         encoder,
                         hasTextContent: () => hasTextContent,
-                        setHasTextContent: (val) => hasTextContent = val,
+                        setHasTextContent: (val) => (hasTextContent = val),
                         reasoningContent: () => reasoningContent,
-                        appendReasoningContent: (content) => reasoningContent += content,
+                        appendReasoningContent: (content) =>
+                          (reasoningContent += content),
                         isReasoningComplete: () => isReasoningComplete,
-                        setReasoningComplete: (val) => isReasoningComplete = val
+                        setReasoningComplete: (val) =>
+                          (isReasoningComplete = val),
                       });
                     } catch (error) {
                       console.error("Error processing line:", line, error);
@@ -217,24 +263,25 @@ export class OpenrouterTransformer implements Transformer {
                 }
                 continue;
               }
-              
+
               // 处理缓冲区中完整的数据行
               const lines = buffer.split("\n");
               buffer = lines.pop() || ""; // 最后一行可能不完整，保留在缓冲区
-              
+
               for (const line of lines) {
                 if (!line.trim()) continue;
-                
+
                 try {
                   processLine(line, {
                     controller,
                     encoder,
                     hasTextContent: () => hasTextContent,
-                    setHasTextContent: (val) => hasTextContent = val,
+                    setHasTextContent: (val) => (hasTextContent = val),
                     reasoningContent: () => reasoningContent,
-                    appendReasoningContent: (content) => reasoningContent += content,
+                    appendReasoningContent: (content) =>
+                      (reasoningContent += content),
                     isReasoningComplete: () => isReasoningComplete,
-                    setReasoningComplete: (val) => isReasoningComplete = val
+                    setReasoningComplete: (val) => (isReasoningComplete = val),
                   });
                 } catch (error) {
                   console.error("Error processing line:", line, error);
@@ -255,9 +302,8 @@ export class OpenrouterTransformer implements Transformer {
             controller.close();
           }
         },
-        
       });
-      
+
       return new Response(stream, {
         status: response.status,
         statusText: response.statusText,
@@ -268,7 +314,7 @@ export class OpenrouterTransformer implements Transformer {
         },
       });
     }
-    
+
     return response;
   }
 }
