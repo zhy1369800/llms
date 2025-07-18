@@ -1,7 +1,8 @@
 import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
 import { Transformer } from "../types/transformer";
 import { log } from "../utils/log";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
+import { error } from "console";
 
 export class OpenrouterTransformer implements Transformer {
   name = "openrouter";
@@ -81,10 +82,20 @@ export class OpenrouterTransformer implements Transformer {
               try {
                 const data = JSON.parse(jsonStr);
                 if (data.usage) {
-                  log('usage', data.usage, hasToolCall);
+                  log("usage", data.usage, hasToolCall);
                   data.choices[0].finish_reason = hasToolCall
                     ? "tool_calls"
                     : "stop";
+                }
+
+                if (data.choices?.[0]?.finish_reason === "error") {
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        error: data.choices?.[0].error,
+                      })}\n\n`
+                    )
+                  );
                 }
 
                 if (
@@ -161,19 +172,21 @@ export class OpenrouterTransformer implements Transformer {
                   delete data.choices[0].delta.reasoning;
                 }
                 if (
-                  data.choices?.[0]?.delta?.tool_calls?.length && 
-                  !Number.isNaN(parseInt(data.choices?.[0]?.delta?.tool_calls[0].id, 10))
+                  data.choices?.[0]?.delta?.tool_calls?.length &&
+                  !Number.isNaN(
+                    parseInt(data.choices?.[0]?.delta?.tool_calls[0].id, 10)
+                  )
                 ) {
                   data.choices?.[0]?.delta?.tool_calls.forEach((tool: any) => {
                     tool.id = `call_${uuidv4()}`;
-                  })
+                  });
                 }
 
                 if (
                   data.choices?.[0]?.delta?.tool_calls?.length &&
                   !hasToolCall
                 ) {
-                  log('hasToolCall', true);
+                  log("hasToolCall", true);
                   hasToolCall = true;
                 }
 

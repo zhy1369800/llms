@@ -3,6 +3,32 @@ import { LLMProvider, UnifiedChatRequest, UnifiedMessage } from "../types/llm";
 import { Transformer } from "../types/transformer";
 import { Content, ContentListUnion, Part, ToolListUnion } from "@google/genai";
 
+function cleanupParameters(obj: any) {
+  if (!obj || typeof obj !== "object") {
+    return;
+  }
+
+  if (Array.isArray(obj)) {
+    obj.forEach(cleanupParameters);
+    return;
+  }
+
+  delete obj.$schema;
+  delete obj.additionalProperties;
+
+  if (
+    obj.type === "string" &&
+    obj.format &&
+    !["enum", "date-time"].includes(obj.format)
+  ) {
+    delete obj.format;
+  }
+
+  Object.keys(obj).forEach((key) => {
+    cleanupParameters(obj[key]);
+  });
+}
+
 export class GeminiTransformer implements Transformer {
   name = "gemini";
 
@@ -64,40 +90,8 @@ export class GeminiTransformer implements Transformer {
           {
             functionDeclarations:
               request.tools?.map((tool) => {
-                delete tool.function.parameters?.$schema;
-                delete tool.function.parameters?.additionalProperties;
-                if (tool.function.parameters?.properties) {
-                  Object.keys(tool.function.parameters.properties).forEach(
-                    (key) => {
-                      delete tool.function.parameters.properties[key].$schema;
-                      delete tool.function.parameters.properties[key]
-                        .additionalProperties;
-                      if (
-                        tool.function.parameters.properties[key].items &&
-                        typeof tool.function.parameters.properties[key]
-                          .items === "object"
-                      ) {
-                        delete tool.function.parameters.properties[key].items
-                          .$schema;
-                        delete tool.function.parameters.properties[key].items
-                          .additionalProperties;
-                      }
-
-                      if (
-                        tool.function.parameters.properties[key].type ===
-                        "string"
-                      ) {
-                        if (
-                          !["enum", "date-time"].includes(
-                            tool.function.parameters.properties[key].format
-                          )
-                        ) {
-                          delete tool.function.parameters.properties[key]
-                            .format;
-                        }
-                      }
-                    }
-                  );
+                if (tool.function.parameters) {
+                  cleanupParameters(tool.function.parameters);
                 }
                 return {
                   name: tool.function.name,
