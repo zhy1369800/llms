@@ -2,7 +2,6 @@ import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
 import { Transformer } from "../types/transformer";
 import { log } from "../utils/log";
 import { v4 as uuidv4 } from "uuid";
-import { error } from "console";
 
 export class OpenrouterTransformer implements Transformer {
   name = "openrouter";
