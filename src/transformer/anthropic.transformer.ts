@@ -7,7 +7,9 @@ export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
   endPoint = "/v1/messages";
 
-  transformRequestOut(request: Record<string, any>): UnifiedChatRequest {
+  async transformRequestOut(
+    request: Record<string, any>
+  ): Promise<UnifiedChatRequest> {
     log("Anthropic Request:", JSON.stringify(request, null, 2));
 
     const messages: UnifiedMessage[] = [];
@@ -24,10 +26,10 @@ export class AnthropicTransformer implements Transformer {
           .map((item: any) => ({
             type: "text" as const,
             text: item.text,
-            cache_control: item.cache_control
+            cache_control: item.cache_control,
           }));
         messages.push({
-          role: 'system',
+          role: "system",
           content: textParts,
         });
       }
@@ -37,16 +39,15 @@ export class AnthropicTransformer implements Transformer {
 
     requestMessages?.forEach((msg: any, index: number) => {
       if (msg.role === "user" || msg.role === "assistant") {
-        const unifiedMsg: UnifiedMessage = {
-          role: msg.role,
-          content: null,
-        };
         if (typeof msg.content === "string") {
           messages.push({
             role: msg.role,
             content: msg.content,
           });
-        } else if (Array.isArray(msg.content)) {
+          return;
+        }
+
+        if (Array.isArray(msg.content)) {
           if (msg.role === "user") {
             const toolParts = msg.content.filter(
               (c: any) => c.type === "tool_result" && c.tool_use_id
@@ -66,25 +67,43 @@ export class AnthropicTransformer implements Transformer {
               });
             }
 
-            const textParts = msg.content.filter(
-              (c: any) => c.type === "text" && c.text
+            const textAndMediaParts = msg.content.filter(
+              (c: any) =>
+                (c.type === "text" && c.text) ||
+                (c.type === "image" && c.source)
             );
-            if (textParts.length) {
+            if (textAndMediaParts.length) {
               messages.push({
                 role: "user",
-                content: textParts,
+                content: textAndMediaParts.map((part: any) => {
+                  if (part?.type === "image") {
+                    return {
+                      type: "image_url",
+                      image_url: {
+                        url:
+                          part.source?.type === "base64"
+                            ? part.source.data
+                            : part.source.url,
+                      },
+                      media_type: part.source.media_type,
+                    };
+                  }
+                  return part;
+                }),
               });
             }
           } else if (msg.role === "assistant") {
             const assistantMessage: UnifiedMessage = {
-              role: 'assistant',
+              role: "assistant",
               content: null,
-            }
+            };
             const textParts = msg.content.filter(
               (c: any) => c.type === "text" && c.text
             );
             if (textParts.length) {
-              assistantMessage.content = textParts.map((text: any) => text.text).join('\n');
+              assistantMessage.content = textParts
+                .map((text: any) => text.text)
+                .join("\n");
             }
 
             const toolCallParts = msg.content.filter(
@@ -100,7 +119,7 @@ export class AnthropicTransformer implements Transformer {
                     arguments: JSON.stringify(tool.input || {}),
                   },
                 };
-              })
+              });
             }
             messages.push(assistantMessage);
           }
@@ -256,15 +275,13 @@ export class AnthropicTransformer implements Transformer {
                     type: "error",
                     message: {
                       type: "api_error",
-                      message: JSON.stringify(chunk.error)
+                      message: JSON.stringify(chunk.error),
                     },
                   };
 
                   safeEnqueue(
                     encoder.encode(
-                      `event: error\ndata: ${JSON.stringify(
-                        errorMessage
-                      )}\n\n`
+                      `event: error\ndata: ${JSON.stringify(errorMessage)}\n\n`
                     )
                   );
                   continue;
@@ -438,7 +455,7 @@ export class AnthropicTransformer implements Transformer {
                             )}\n\n`
                           )
                         );
-                        contentIndex++
+                        contentIndex++;
                       }
                       toolCallIndexToContentBlockIndex.set(
                         toolCallIndex,
@@ -582,7 +599,10 @@ export class AnthropicTransformer implements Transformer {
                     );
                   }
 
-                  if ((hasTextContentStarted || toolCallChunks > 0) && !isClosed) {
+                  if (
+                    (hasTextContentStarted || toolCallChunks > 0) &&
+                    !isClosed
+                  ) {
                     log("content_block_stop hasTextContentStarted");
                     const contentBlockStop = {
                       type: "content_block_stop",
@@ -727,12 +747,12 @@ export class AnthropicTransformer implements Transformer {
         choice.finish_reason === "stop"
           ? "end_turn"
           : choice.finish_reason === "length"
-            ? "max_tokens"
-            : choice.finish_reason === "tool_calls"
-              ? "tool_use"
-              : choice.finish_reason === "content_filter"
-                ? "stop_sequence"
-                : "end_turn",
+          ? "max_tokens"
+          : choice.finish_reason === "tool_calls"
+          ? "tool_use"
+          : choice.finish_reason === "content_filter"
+          ? "stop_sequence"
+          : "end_turn",
       stop_sequence: null,
       usage: {
         input_tokens: openaiResponse.usage?.prompt_tokens || 0,

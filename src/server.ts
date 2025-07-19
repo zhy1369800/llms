@@ -46,7 +46,9 @@ interface ServerOptions {
 
 // Application factory
 function createApp(): FastifyInstance {
-  const fastify = Fastify({});
+  const fastify = Fastify({
+    bodyLimit: 50 * 1024 * 1024,
+  });
 
   // Register error handler
   fastify.setErrorHandler(errorHandler);

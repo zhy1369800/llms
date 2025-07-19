@@ -22,11 +22,11 @@ export interface TextContent {
 }
 
 export interface ImageContent {
-  type: "image";
+  type: "image_url";
   image_url: {
     url: string;
-    detail?: "auto" | "low" | "high";
   };
+  media_type: string;
 }
 
 export type MessageContent = TextContent | ImageContent;

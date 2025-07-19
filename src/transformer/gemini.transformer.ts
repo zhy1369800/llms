@@ -34,10 +34,10 @@ export class GeminiTransformer implements Transformer {
 
   endPoint = "/v1beta/models/:modelAndAction";
 
-  transformRequestIn(
+  async transformRequestIn(
     request: UnifiedChatRequest,
     provider: LLMProvider
-  ): Record<string, any> {
+  ): Promise<Record<string, any>> {
     return {
       body: {
         contents: request.messages.map((message: UnifiedMessage) => {
@@ -61,6 +61,23 @@ export class GeminiTransformer implements Transformer {
                   return {
                     text: content.text || "",
                   };
+                }
+                if (content.type === "image_url") {
+                  if (content.image_url.url.startsWith("http")) {
+                    return {
+                      file_data: {
+                        mime_type: content.media_type,
+                        file_uri: content.image_url.url,
+                      },
+                    };
+                  } else {
+                    return {
+                      inlineData: {
+                        mime_type: content.media_type,
+                        data: content.image_url.url,
+                      },
+                    };
+                  }
                 }
               })
             );

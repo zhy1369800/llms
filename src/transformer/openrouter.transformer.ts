@@ -2,18 +2,25 @@ import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
 import { Transformer } from "../types/transformer";
 import { log } from "../utils/log";
 import { v4 as uuidv4 } from "uuid";
-import { error } from "console";
 
 export class OpenrouterTransformer implements Transformer {
   name = "openrouter";
 
-  transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
+  async transformRequestIn(
+    request: UnifiedChatRequest
+  ): Promise<UnifiedChatRequest> {
     if (!request.model.includes("claude")) {
       request.messages.forEach((msg) => {
         if (Array.isArray(msg.content)) {
-          (msg.content as MessageContent[]).forEach((item) => {
-            if ((item as TextContent).cache_control) {
-              delete (item as TextContent).cache_control;
+          msg.content.forEach((item: any) => {
+            if (item.cache_control) {
+              delete item.cache_control;
+            }
+            if (item.type === "image_url") {
+              if (!item.image_url.url.startsWith("http")) {
+                item.image_url.url = `data:${item.media_type};base64,${item.image_url.url}`;
+              }
+              delete item.media_type;
             }
           });
         } else if (msg.cache_control) {
