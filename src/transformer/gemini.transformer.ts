@@ -106,17 +106,24 @@ export class GeminiTransformer implements Transformer {
         tools: [
           {
             functionDeclarations:
-              request.tools?.map((tool) => {
-                if (tool.function.parameters) {
-                  cleanupParameters(tool.function.parameters);
-                }
-                return {
-                  name: tool.function.name,
-                  description: tool.function.description,
-                  parameters: tool.function.parameters,
-                };
-              }) || [],
+              request.tools
+                ?.filter((tool) => tool.function.name !== "web_search")
+                ?.map((tool) => {
+                  if (tool.function.parameters) {
+                    cleanupParameters(tool.function.parameters);
+                  }
+                  return {
+                    name: tool.function.name,
+                    description: tool.function.description,
+                    parameters: tool.function.parameters,
+                  };
+                }) || [],
           },
+          request.tools?.find((tool) => tool.function.name === "web_search")
+            ? {
+                google_search: {},
+              }
+            : undefined,
         ],
       },
       config: {
@@ -233,8 +240,8 @@ export class GeminiTransformer implements Transformer {
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse: any = await response.json();
       const tool_calls = jsonResponse.candidates[0].content.parts
-        .filter((part: Part) => part.functionCall)
-        .map((part: Part) => ({
+        ?.filter((part: Part) => part.functionCall)
+        ?.map((part: Part) => ({
           id:
             part.functionCall?.id ||
             `tool_${Math.random().toString(36).substring(2, 15)}`,
@@ -255,9 +262,9 @@ export class GeminiTransformer implements Transformer {
             index: 0,
             message: {
               content: jsonResponse.candidates[0].content.parts
-                .filter((part: Part) => part.text)
-                .map((part: Part) => part.text)
-                .join("\n"),
+                ?.filter((part: Part) => part.text)
+                ?.map((part: Part) => part.text)
+                ?.join("\n"),
               role: "assistant",
               tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
             },
@@ -284,25 +291,24 @@ export class GeminiTransformer implements Transformer {
 
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body!.getReader();
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
 
-              let chunk = decoder.decode(value, { stream: true });
-              if (chunk.startsWith("data: ")) {
-                chunk = chunk.slice(6).trim();
-              } else {
-                break;
-              }
-              log("gemini chunk:", chunk);
-              chunk = JSON.parse(chunk);
+      const processLine = (
+        line: string,
+        controller: ReadableStreamDefaultController
+      ) => {
+        if (line.startsWith("data: ")) {
+          const chunkStr = line.slice(6).trim();
+          if (chunkStr) {
+            log("gemini chunk:", chunkStr);
+            try {
+              const chunk = JSON.parse(chunkStr);
+              log(
+                "groundingMetadata: ",
+                JSON.stringify(chunk.candidates[0].groundingMetadata)
+              );
               const tool_calls = chunk.candidates[0].content.parts
-                .filter((part: Part) => part.functionCall)
-                .map((part: Part) => ({
+                ?.filter((part: Part) => part.functionCall)
+                ?.map((part: Part) => ({
                   id:
                     part.functionCall?.id ||
                     `tool_${Math.random().toString(36).substring(2, 15)}`,
@@ -318,9 +324,9 @@ export class GeminiTransformer implements Transformer {
                     delta: {
                       role: "assistant",
                       content: chunk.candidates[0].content.parts
-                        .filter((part: Part) => part.text)
-                        .map((part: Part) => part.text)
-                        .join("\n"),
+                        ?.filter((part: Part) => part.text)
+                        ?.map((part: Part) => part.text)
+                        ?.join("\n"),
                       tool_calls:
                         tool_calls.length > 0 ? tool_calls : undefined,
                     },
@@ -338,11 +344,64 @@ export class GeminiTransformer implements Transformer {
                 model: chunk.modelVersion || "",
                 object: "chat.completion.chunk",
                 system_fingerprint: "fp_a49d71b8a1",
+                usage: {
+                  completion_tokens: chunk.usageMetadata.candidatesTokenCount,
+                  prompt_tokens: chunk.usageMetadata.promptTokenCount,
+                  total_tokens: chunk.usageMetadata.totalTokenCount,
+                },
               };
-              log("gemini response:", JSON.stringify(res, null, 2));
+              if (
+                chunk.candidates[0]?.groundingMetadata?.groundingChunks?.length
+              ) {
+                res.choices[0].delta.annotations =
+                  chunk.candidates[0].groundingMetadata.groundingChunks.map(
+                    (groundingChunk, index) => {
+                      const support = chunk.candidates[0]?.groundingMetadata?.groundingSupports?.filter(item => item.groundingChunkIndices.includes(index))
+                      return {
+                        type: "url_citation",
+                        url_citation: {
+                          url: groundingChunk.web.uri,
+                          title: groundingChunk.web.title,
+                          content: support?.[0].segment.text,
+                          start_index: support?.[0].segment.startIndex,
+                          end_index: support?.[0].segment.endIndex,
+                        },
+                      };
+                    }
+                  );
+              }
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
               );
+            } catch (error: any) {
+              log("Error parsing Gemini stream chunk", chunkStr, error.message);
+            }
+          }
+        }
+      };
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body!.getReader();
+          let buffer = "";
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                if (buffer) {
+                  processLine(buffer, controller);
+                }
+                break;
+              }
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                processLine(line, controller);
+              }
             }
           } catch (error) {
             controller.error(error);

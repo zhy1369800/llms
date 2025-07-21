@@ -2,6 +2,8 @@ import { ChatCompletion } from "openai/resources";
 import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "@/types/llm";
 import { Transformer } from "@/types/transformer";
 import { log } from "@/utils/log";
+import { v4 as uuidv4 } from "uuid";
+import { title } from "process";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
@@ -20,7 +22,7 @@ export class AnthropicTransformer implements Transformer {
           role: "system",
           content: request.system,
         });
-      } else if (Array.isArray(request.system)) {
+      } else if (Array.isArray(request.system) && request.system.length) {
         const textParts = request.system
           .filter((item: any) => item.type === "text" && item.text)
           .map((item: any) => ({
@@ -424,6 +426,64 @@ export class AnthropicTransformer implements Transformer {
                   }
                 }
 
+                if (
+                  choice?.delta?.annotations?.length &&
+                  !isClosed &&
+                  !hasFinished
+                ) {
+                  const contentBlockStop = {
+                    type: "content_block_stop",
+                    index: contentIndex,
+                  };
+                  safeEnqueue(
+                    encoder.encode(
+                      `event: content_block_stop\ndata: ${JSON.stringify(
+                        contentBlockStop
+                      )}\n\n`
+                    )
+                  );
+                  hasTextContentStarted = false;
+                  choice?.delta?.annotations.forEach(
+                    (annotation, annotationIndex, annotations) => {
+                      contentIndex++;
+                      const contentBlockStart = {
+                        type: "content_block_start",
+                        index: contentIndex,
+                        content_block: {
+                          type: "web_search_tool_result",
+                          tool_use_id: `srvtoolu_${uuidv4()}`,
+                          content: [
+                            {
+                              type: "web_search_result",
+                              title: annotation.url_citation.title,
+                              url: annotation.url_citation.url,
+                            },
+                          ],
+                        },
+                      };
+                      safeEnqueue(
+                        encoder.encode(
+                          `event: content_block_start\ndata: ${JSON.stringify(
+                            contentBlockStart
+                          )}\n\n`
+                        )
+                      );
+
+                      const contentBlockStop = {
+                        type: "content_block_stop",
+                        index: contentIndex,
+                      };
+                      safeEnqueue(
+                        encoder.encode(
+                          `event: content_block_stop\ndata: ${JSON.stringify(
+                            contentBlockStop
+                          )}\n\n`
+                        )
+                      );
+                    }
+                  );
+                }
+
                 if (choice?.delta?.tool_calls && !isClosed && !hasFinished) {
                   toolCallChunks++;
                   const processedInThisChunk = new Set<number>();
@@ -707,6 +767,28 @@ export class AnthropicTransformer implements Transformer {
       throw new Error("No choices found in OpenAI response");
     }
     const content: any[] = [];
+    if (choice.message.annotations) {
+      const id = `srvtoolu_${uuidv4()}`;
+      content.push({
+        type: "server_tool_use",
+        id,
+        name: "web_search",
+        input: {
+          query: "",
+        },
+      });
+      content.push({
+        type: "web_search_tool_result",
+        tool_use_id: id,
+        content: choice.message.annotations.map((item) => {
+          return {
+            type: "web_search_result",
+            url: item.url_citation.url,
+            title: item.url_citation.title,
+          };
+        }),
+      });
+    }
     if (choice.message.content) {
       content.push({
         type: "text",

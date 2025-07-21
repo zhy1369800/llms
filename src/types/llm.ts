@@ -12,13 +12,25 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages";
 import { Transformer } from "./transformer";
 
+export interface UrlCitation {
+  url: string;
+  title: string;
+  content: string;
+  start_index: number;
+  end_index: number;
+}
+export interface Annotation {
+  type: "url_citation";
+  url_citation?: UrlCitation;
+}
+
 // 内容类型定义
 export interface TextContent {
   type: "text";
   text: string;
   cache_control?: {
-    type?: string
-  }
+    type?: string;
+  };
 }
 
 export interface ImageContent {
@@ -45,7 +57,7 @@ export interface UnifiedMessage {
   }>;
   tool_call_id?: string;
   cache_control?: {
-    type?: string
+    type?: string;
   };
   thinking?: {
     content: string;
@@ -98,6 +110,7 @@ export interface UnifiedChatResponse {
       arguments: string;
     };
   }>;
+  annotations?: Annotation[];
 }
 
 // 流式响应相关类型
@@ -119,6 +132,7 @@ export interface StreamChunk {
           arguments?: string;
         };
       }>;
+      annotations?: Annotation[];
     };
     finish_reason?: string | null;
   }>;
@@ -139,9 +153,9 @@ export interface OpenAIChatRequest {
   stream?: boolean;
   tools?: ChatCompletionTool[];
   tool_choice?:
-  | "auto"
-  | "none"
-  | { type: "function"; function: { name: string } };
+    | "auto"
+    | "none"
+    | { type: "function"; function: { name: string } };
 }
 
 // Anthropic 特定类型
@@ -161,7 +175,6 @@ export interface ConversionOptions {
   targetProvider: "openai" | "anthropic";
   sourceProvider: "openai" | "anthropic";
 }
-
 
 export interface LLMProvider {
   name: string;
@@ -201,6 +214,6 @@ export interface ConfigProvider {
   } & {
     [key: string]: {
       use?: string[] | Array<any>[];
-    }
+    };
   };
 }
