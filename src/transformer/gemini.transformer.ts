@@ -38,6 +38,30 @@ export class GeminiTransformer implements Transformer {
     request: UnifiedChatRequest,
     provider: LLMProvider
   ): Promise<Record<string, any>> {
+    const tools = [];
+    const functionDeclarations = request.tools
+      ?.filter((tool) => tool.function.name !== "web_search")
+      ?.map((tool) => {
+        if (tool.function.parameters) {
+          cleanupParameters(tool.function.parameters);
+        }
+        return {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters,
+        };
+      });
+    if (functionDeclarations?.length) {
+      tools.push({
+        functionDeclarations
+      })
+    }
+    const webSearch = request.tools?.find((tool) => tool.function.name === "web_search")
+    if (webSearch) {
+      tools.push({
+        google_search: {},
+      })
+    }
     return {
       body: {
         contents: request.messages.map((message: UnifiedMessage) => {
@@ -103,33 +127,11 @@ export class GeminiTransformer implements Transformer {
             parts,
           };
         }),
-        tools: [
-          {
-            functionDeclarations:
-              request.tools
-                ?.filter((tool) => tool.function.name !== "web_search")
-                ?.map((tool) => {
-                  if (tool.function.parameters) {
-                    cleanupParameters(tool.function.parameters);
-                  }
-                  return {
-                    name: tool.function.name,
-                    description: tool.function.description,
-                    parameters: tool.function.parameters,
-                  };
-                }) || [],
-          },
-          request.tools?.find((tool) => tool.function.name === "web_search")
-            ? {
-                google_search: {},
-              }
-            : undefined,
-        ],
+        tools: tools.length ? tools : undefined,
       },
       config: {
         url: new URL(
-          `./${request.model}:${
-            request.stream ? "streamGenerateContent?alt=sse" : "generateContent"
+          `./${request.model}:${request.stream ? "streamGenerateContent?alt=sse" : "generateContent"
           }`,
           provider.baseUrl
         ),
@@ -302,10 +304,6 @@ export class GeminiTransformer implements Transformer {
             log("gemini chunk:", chunkStr);
             try {
               const chunk = JSON.parse(chunkStr);
-              log(
-                "groundingMetadata: ",
-                JSON.stringify(chunk.candidates[0].groundingMetadata)
-              );
               const tool_calls = chunk.candidates[0].content.parts
                 ?.filter((part: Part) => part.functionCall)
                 ?.map((part: Part) => ({
