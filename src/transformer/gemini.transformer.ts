@@ -59,7 +59,7 @@ export class GeminiTransformer implements Transformer {
     const webSearch = request.tools?.find((tool) => tool.function.name === "web_search")
     if (webSearch) {
       tools.push({
-        google_search: {},
+        googleSearch: {},
       })
     }
     return {
