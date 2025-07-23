@@ -2,18 +2,52 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Project Overview
 
-- `npm run dev`: Starts the development server with hot-reloading.
-- `npm run build`: Builds the project for production.
-- `npm run lint`: Lints the source code.
-- `npm run start`: Starts the production server.
+This is a universal LLM API transformation server that acts as middleware to standardize requests and responses between different LLM providers (Anthropic, Gemini, Deepseek, etc.). It uses a modular transformer system to handle provider-specific API formats.
 
-## Architecture
+## Key Architecture Components
 
-This project is a universal LLM API transformation server. It acts as a middleware to standardize requests and responses between different LLM providers (e.g., Anthropic, Gemini, OpenAI).
+1. **Transformers**: Each provider has a dedicated transformer class that implements:
+   - `transformRequestIn`: Converts the provider's request format to a unified format
+   - `transformResponseIn`: Converts the provider's response format to a unified format
+   - `transformRequestOut`: Converts the unified request format to the provider's format
+   - `transformResponseOut`: Converts the unified response format back to the provider's format
+   - `endPoint`: Specifies the API endpoint for the provider
 
-- **Transformers**: The core of the architecture is the transformer system in `src/transformer`. Each LLM provider has its own transformer file (e.g., `src/transformer/anthropic.transformer.ts`) that handles the conversion between the provider-specific API format and a unified format defined in `src/types/llm.ts`.
-- **Server**: The main server logic is in `src/server.ts`, which uses Fastify to handle requests.
-- **Configuration**: Environment variables and configuration are managed in `src/services/config.ts`, which supports `.env` files.
-- **Path Aliases**: The path alias `@` is mapped to the `src` directory.
+2. **Unified Formats**: Requests and responses are standardized using `UnifiedChatRequest` and `UnifiedChatResponse` types.
+
+3. **Streaming Support**: Handles real-time streaming responses for providers, converting chunked data into a standardized format.
+
+## Common Development Commands
+
+- **Install dependencies**: `pnpm install` or `npm install`
+- **Development mode**: `npm run dev` (Uses nodemon + tsx for hot-reloading)
+- **Build**: `npm run build` (Outputs to dist/cjs and dist/esm)
+- **Lint**: `npm run lint` (Runs ESLint on src directory)
+- **Start server (CJS)**: `npm start` or `node dist/cjs/server.cjs`
+- **Start server (ESM)**: `npm run start:esm` or `node dist/esm/server.mjs`
+
+## Project Structure
+
+- `src/server.ts`: Main entry point
+- `src/transformer/`: Provider-specific transformer implementations
+- `src/services/`: Core services (config, llm, provider, transformer)
+- `src/types/`: TypeScript type definitions
+- `src/utils/`: Utility functions
+- `src/api/`: API routes and middleware
+
+## Path Aliases
+
+- `@` is mapped to the `src` directory, use `import xxx from '@/xxx'`
+
+## Build System
+
+The project uses esbuild for building, with separate CJS and ESM outputs. The build script is located at `scripts/build.ts`.
+
+## Adding New Transformers
+
+1. Create a new transformer file in `src/transformer/`
+2. Implement the required transformer methods
+3. Export the transformer in `src/transformer/index.ts`
+4. The transformer will be automatically registered at startup

@@ -241,7 +241,7 @@ export class GeminiTransformer implements Transformer {
   async transformResponseOut(response: Response): Promise<Response> {
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse: any = await response.json();
-      const tool_calls = jsonResponse.candidates[0].content.parts
+      const tool_calls = jsonResponse.candidates[0].content?.parts
         ?.filter((part: Part) => part.functionCall)
         ?.map((part: Part) => ({
           id:
@@ -252,7 +252,7 @@ export class GeminiTransformer implements Transformer {
             name: part.functionCall?.name,
             arguments: JSON.stringify(part.functionCall?.args || {}),
           },
-        }));
+        })) || [];
       const res = {
         id: jsonResponse.responseId,
         choices: [
@@ -263,7 +263,7 @@ export class GeminiTransformer implements Transformer {
               )?.toLowerCase() || null,
             index: 0,
             message: {
-              content: jsonResponse.candidates[0].content.parts
+              content: jsonResponse.candidates[0].content?.parts
                 ?.filter((part: Part) => part.text)
                 ?.map((part: Part) => part.text)
                 ?.join("\n"),
@@ -304,7 +304,7 @@ export class GeminiTransformer implements Transformer {
             log("gemini chunk:", chunkStr);
             try {
               const chunk = JSON.parse(chunkStr);
-              const tool_calls = chunk.candidates[0].content.parts
+              const tool_calls = chunk.candidates[0].content?.parts
                 ?.filter((part: Part) => part.functionCall)
                 ?.map((part: Part) => ({
                   id:
@@ -321,7 +321,7 @@ export class GeminiTransformer implements Transformer {
                   {
                     delta: {
                       role: "assistant",
-                      content: chunk.candidates[0].content.parts
+                      content: chunk.candidates[0].content?.parts
                         ?.filter((part: Part) => part.text)
                         ?.map((part: Part) => part.text)
                         ?.join("\n"),
@@ -380,7 +380,7 @@ export class GeminiTransformer implements Transformer {
 
       const stream = new ReadableStream({
         async start(controller) {
-          const reader = response.body!.getReader();
+          const reader = response.bofdy!.getReader();
           let buffer = "";
           try {
             while (true) {
