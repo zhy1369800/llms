@@ -62,7 +62,7 @@ export class VertexGeminiTransformer implements Transformer {
       config: {
         url: new URL(
           `./v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${request.model}:${request.stream ? "streamGenerateContent" : "generateContent"}`,
-            provider.baseUrl.endsWith('/') ? provider.baseUrl : provider.baseUrl + '/' || 'https://us-central1-aiplatform.googleapis.com'
+            provider.baseUrl.endsWith('/') ? provider.baseUrl : provider.baseUrl + '/' || `https://${location}-aiplatform.googleapis.com`
         ),
         headers: {
           "Authorization": `Bearer ${accessToken}`,
