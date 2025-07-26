@@ -577,32 +577,6 @@ export class AnthropicTransformer implements Transformer {
                       if (currentToolCall) {
                         currentToolCall.arguments +=
                           toolCall.function.arguments;
-                        try {
-                          let parsedParams = null;
-                          const trimmedArgs = currentToolCall.arguments.trim();
-                          if (
-                            trimmedArgs.startsWith("{") &&
-                            trimmedArgs.endsWith("}")
-                          ) {
-                            try {
-                              parsedParams = JSON.parse(trimmedArgs);
-                            } catch (e: any) {
-                              log(
-                                "Tool call index:",
-                                toolCallIndex,
-                                "error",
-                                e.message
-                              );
-                            }
-                          }
-                        } catch (e: any) {
-                          log(
-                            "Tool call index:",
-                            toolCallIndex,
-                            "error",
-                            e.message
-                          );
-                        }
                       }
 
                       try {

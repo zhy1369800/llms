@@ -9,7 +9,7 @@ export class MaxTokenTransformer implements Transformer {
     this.max_tokens = this.options?.max_tokens;
   }
 
-  transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
+  async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
     if (request.max_tokens && request.max_tokens > this.max_tokens) {
       request.max_tokens = this.max_tokens;
     }
