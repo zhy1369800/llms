@@ -358,11 +358,11 @@ export class GeminiTransformer implements Transformer {
                       return {
                         type: "url_citation",
                         url_citation: {
-                          url: groundingChunk.web.uri,
-                          title: groundingChunk.web.title,
-                          content: support?.[0].segment.text,
-                          start_index: support?.[0].segment.startIndex,
-                          end_index: support?.[0].segment.endIndex,
+                          url: groundingChunk?.web?.uri,
+                          title: groundingChunk?.web?.title,
+                          content: support?.[0]?.segment?.text,
+                          start_index: support?.[0]?.segment?.startIndex,
+                          end_index: support?.[0]?.segment?.endIndex,
                         },
                       };
                     }
@@ -380,7 +380,7 @@ export class GeminiTransformer implements Transformer {
 
       const stream = new ReadableStream({
         async start(controller) {
-          const reader = response.bofdy!.getReader();
+          const reader = response.body!.getReader();
           let buffer = "";
           try {
             while (true) {

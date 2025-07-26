@@ -6,6 +6,7 @@ import { OpenrouterTransformer } from "./openrouter.transformer";
 import { MaxTokenTransformer } from "./maxtoken.transformer";
 import { GroqTransformer } from "./groq.transformer";
 import { CleancacheTransformer } from "./cleancache.transformer";
+import { Enhancetoolransformer } from "./enhancetool.transformer";
 
 export default {
   AnthropicTransformer,
@@ -15,5 +16,6 @@ export default {
   OpenrouterTransformer,
   MaxTokenTransformer,
   GroqTransformer,
-  CleancacheTransformer
+  CleancacheTransformer,
+  Enhancetoolransformer
 };

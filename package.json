@@ -1,6 +1,6 @@
 {
   "name": "@musistudio/llms",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "A universal LLM API transformation server",
   "main": "dist/cjs/server.cjs",
   "module": "dist/esm/server.mjs",
@@ -29,6 +29,7 @@
     "@google/genai": "^1.7.0",
     "dotenv": "^16.5.0",
     "fastify": "^5.4.0",
+    "json5": "^2.2.3",
     "openai": "^5.6.0",
     "undici": "^7.10.0",
     "uuid": "^11.1.0"
