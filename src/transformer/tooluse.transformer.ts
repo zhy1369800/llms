@@ -68,73 +68,133 @@ Examples:
       const encoder = new TextEncoder();
       let exitToolIndex = -1;
       let exitToolResponse = "";
+      let buffer = ""; // 用于缓冲不完整的数据
 
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
+
+          const processBuffer = (
+            buffer: string,
+            controller: ReadableStreamDefaultController,
+            encoder: TextEncoder
+          ) => {
+            const lines = buffer.split("\n");
+            for (const line of lines) {
+              if (line.trim()) {
+                controller.enqueue(encoder.encode(line + "\n"));
+              }
+            }
+          };
+
+          const processLine = (
+            line: string,
+            context: {
+              controller: ReadableStreamDefaultController;
+              encoder: TextEncoder;
+              exitToolIndex: () => number;
+              setExitToolIndex: (val: number) => void;
+              exitToolResponse: () => string;
+              appendExitToolResponse: (content: string) => void;
+            }
+          ) => {
+            const {
+              controller,
+              encoder,
+              exitToolIndex,
+              setExitToolIndex,
+              appendExitToolResponse,
+            } = context;
+
+            if (
+              line.startsWith("data: ") &&
+              line.trim() !== "data: [DONE]"
+            ) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.choices[0]?.delta?.tool_calls?.length) {
+                  const toolCall = data.choices[0].delta.tool_calls[0];
+
+                  if (toolCall.function?.name === "ExitTool") {
+                    setExitToolIndex(toolCall.index);
+                    return;
+                  } else if (
+                    exitToolIndex() > -1 &&
+                    toolCall.index === exitToolIndex() &&
+                    toolCall.function.arguments
+                  ) {
+                    appendExitToolResponse(toolCall.function.arguments);
+                    try {
+                      const response = JSON.parse(context.exitToolResponse());
+                      data.choices = [
+                        {
+                          delta: {
+                            role: "assistant",
+                            content: response.response || "",
+                          },
+                        },
+                      ];
+                      const modifiedLine = `data: ${JSON.stringify(
+                        data
+                      )}\n\n`;
+                      controller.enqueue(encoder.encode(modifiedLine));
+                    } catch (e) {}
+                    return;
+                  }
+                }
+
+                if (
+                  data.choices?.[0]?.delta &&
+                  Object.keys(data.choices[0].delta).length > 0
+                ) {
+                  const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
+                  controller.enqueue(encoder.encode(modifiedLine));
+                }
+              } catch (e) {
+                // If JSON parsing fails, pass through the original line
+                controller.enqueue(encoder.encode(line + "\n"));
+              }
+            } else {
+              // Pass through non-data lines (like [DONE])
+              controller.enqueue(encoder.encode(line + "\n"));
+            }
+          };
+
           try {
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+              if (done) {
+                if (buffer.trim()) {
+                  processBuffer(buffer, controller, encoder);
+                }
+                break;
+              }
               const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split("\n");
+              buffer += chunk;
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
               for (const line of lines) {
-                if (
-                  line.startsWith("data: ") &&
-                  line.trim() !== "data: [DONE]"
-                ) {
-                  try {
-                    const data = JSON.parse(line.slice(6));
-
-                    if (data.choices[0]?.delta?.tool_calls?.length) {
-                      const toolCall = data.choices[0].delta.tool_calls[0];
-
-                      if (toolCall.function?.name === "ExitTool") {
-                        exitToolIndex = toolCall.index;
-                        continue;
-                      } else if (
-                        exitToolIndex > -1 &&
-                        toolCall.index === exitToolIndex &&
-                        toolCall.function.arguments
-                      ) {
-                        exitToolResponse += toolCall.function.arguments;
-                        try {
-                          const response = JSON.parse(exitToolResponse);
-                          data.choices = [
-                            {
-                              delta: {
-                                role: "assistant",
-                                content: response.response || "",
-                              },
-                            },
-                          ];
-                          const modifiedLine = `data: ${JSON.stringify(
-                            data
-                          )}\n\n`;
-                          controller.enqueue(encoder.encode(modifiedLine));
-                        } catch (e) {}
-                        continue;
-                      }
-                    }
-
-                    if (
-                      data.choices?.[0]?.delta &&
-                      Object.keys(data.choices[0].delta).length > 0
-                    ) {
-                      const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
-                      controller.enqueue(encoder.encode(modifiedLine));
-                    }
-                  } catch (e) {
-                    // If JSON parsing fails, pass through the original line
-                    controller.enqueue(encoder.encode(line + "\n"));
-                  }
-                } else {
-                  // Pass through non-data lines (like [DONE])
+                if (!line.trim()) continue;
+                try {
+                  processLine(line, {
+                    controller,
+                    encoder,
+                    exitToolIndex: () => exitToolIndex,
+                    setExitToolIndex: (val) => (exitToolIndex = val),
+                    exitToolResponse: () => exitToolResponse,
+                    appendExitToolResponse: (content) =>
+                      (exitToolResponse += content),
+                  });
+                } catch (error) {
+                  console.error("Error processing line:", line, error);
+                  // 如果解析失败，直接传递原始行
                   controller.enqueue(encoder.encode(line + "\n"));
                 }
               }
             }
           } catch (error) {
+            console.error("Stream error:", error);
             controller.error(error);
           } finally {
             try {
