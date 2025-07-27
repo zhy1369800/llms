@@ -4,7 +4,7 @@ import {
   buildRequestBody,
   transformRequestOut,
   transformResponseOut,
-} from "./gemini.util";
+} from "../utils/gemini.util";
 
 export class GeminiTransformer implements Transformer {
   name = "gemini";

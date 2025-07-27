@@ -1,15 +1,7 @@
-import { UnifiedChatRequest } from "../types/llm";
 import { Transformer } from "../types/transformer";
 
-export class DeepseekTransformer implements Transformer {
-  name = "deepseek";
-
-  async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
-    if (request.max_tokens && request.max_tokens > 8192) {
-      request.max_tokens = 8192; // DeepSeek has a max token limit of 8192
-    }
-    return request;
-  }
+export class ReasoningTransformer implements Transformer {
+  name = "reasoning";
 
   async transformResponseOut(response: Response): Promise<Response> {
     if (response.headers.get("Content-Type")?.includes("application/json")) {
@@ -29,15 +21,17 @@ export class DeepseekTransformer implements Transformer {
       const encoder = new TextEncoder();
       let reasoningContent = "";
       let isReasoningComplete = false;
-      let buffer = ""; // 用于缓冲不完整的数据
+      let buffer = ""; // Buffer for incomplete data
 
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
+
+          // Process buffer function
           const processBuffer = (
             buffer: string,
             controller: ReadableStreamDefaultController,
-            encoder: typeof TextEncoder
+            encoder: TextEncoder
           ) => {
             const lines = buffer.split("\n");
             for (const line of lines) {
@@ -47,6 +41,7 @@ export class DeepseekTransformer implements Transformer {
             }
           };
 
+          // Process line function
           const processLine = (
             line: string,
             context: {
@@ -96,7 +91,7 @@ export class DeepseekTransformer implements Transformer {
 
                 // Check if reasoning is complete (when delta has content but no reasoning_content)
                 if (
-                  data.choices?.[0]?.delta?.content &&
+                    (data.choices?.[0]?.delta?.content || data.choices?.[0]?.delta?.tool_calls) &&
                   context.reasoningContent() &&
                   !context.isReasoningComplete()
                 ) {
@@ -128,7 +123,7 @@ export class DeepseekTransformer implements Transformer {
                   controller.enqueue(encoder.encode(thinkingLine));
                 }
 
-                if (data.choices[0]?.delta?.reasoning_content) {
+                if (data.choices?.[0]?.delta?.reasoning_content) {
                   delete data.choices[0].delta.reasoning_content;
                 }
 
@@ -157,7 +152,7 @@ export class DeepseekTransformer implements Transformer {
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                // 处理缓冲区中剩余的数据
+                // Process remaining data in buffer
                 if (buffer.trim()) {
                   processBuffer(buffer, controller, encoder);
                 }
@@ -167,9 +162,9 @@ export class DeepseekTransformer implements Transformer {
               const chunk = decoder.decode(value, { stream: true });
               buffer += chunk;
 
-              // 处理缓冲区中完整的数据行
+              // Process complete lines from buffer
               const lines = buffer.split("\n");
-              buffer = lines.pop() || ""; // 最后一行可能不完整，保留在缓冲区
+              buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
               for (const line of lines) {
                 if (!line.trim()) continue;
@@ -177,7 +172,7 @@ export class DeepseekTransformer implements Transformer {
                 try {
                   processLine(line, {
                     controller,
-                    encoder,
+                    encoder: encoder,
                     reasoningContent: () => reasoningContent,
                     appendReasoningContent: (content) =>
                       (reasoningContent += content),
@@ -186,7 +181,7 @@ export class DeepseekTransformer implements Transformer {
                   });
                 } catch (error) {
                   console.error("Error processing line:", line, error);
-                  // 如果解析失败，直接传递原始行
+                  // Pass through original line if parsing fails
                   controller.enqueue(encoder.encode(line + "\n"));
                 }
               }

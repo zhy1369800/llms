@@ -5,16 +5,16 @@ import {
   buildRequestBody,
   transformRequestOut,
   transformResponseOut,
-} from "./gemini.util";
+} from "../utils/gemini.util";
 
 async function getAccessToken(): Promise<string> {
   try {
     const { GoogleAuth } = await import('google-auth-library');
-    
+
     const auth = new GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/cloud-platform']
     });
-    
+
     const client = await auth.getClient();
     const accessToken = await client.getAccessToken();
     return accessToken.token || '';
@@ -38,7 +38,7 @@ export class VertexGeminiTransformer implements Transformer {
   ): Promise<Record<string, any>> {
     let projectId = process.env.GOOGLE_CLOUD_PROJECT;
     const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
-    
+
     if (!projectId && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       try {
         const fs = await import('fs');
@@ -51,7 +51,7 @@ export class VertexGeminiTransformer implements Transformer {
         log('Error extracting project_id from GOOGLE_APPLICATION_CREDENTIALS:', error);
       }
     }
-    
+
     if (!projectId) {
       throw new Error('Project ID is required for Vertex AI. Set GOOGLE_CLOUD_PROJECT environment variable or ensure project_id is in GOOGLE_APPLICATION_CREDENTIALS file.');
     }

@@ -2,7 +2,7 @@ import { Transformer } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { parseToolArguments } from "@/utils/toolArgumentsParser";
 
-export class Enhancetoolransformer implements Transformer {
+export class EnhanceToolTransformer implements Transformer {
   name = "enhancetool";
 
   async transformResponseOut(response: Response): Promise<Response> {
@@ -12,7 +12,9 @@ export class Enhancetoolransformer implements Transformer {
         // 处理非流式的工具调用参数解析
         for (const toolCall of jsonResponse.choices[0].message.tool_calls) {
           if (toolCall.function?.arguments) {
-            toolCall.function.arguments = parseToolArguments(toolCall.function.arguments);
+            toolCall.function.arguments = parseToolArguments(
+              toolCall.function.arguments
+            );
           }
         }
       }
@@ -28,7 +30,16 @@ export class Enhancetoolransformer implements Transformer {
 
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
-      let currentToolCall = {};
+
+      // Define interface for tool call tracking
+      interface ToolCall {
+        index?: number;
+        name?: string;
+        id?: string;
+        arguments?: string;
+      }
+
+      let currentToolCall: ToolCall = {};
 
       let hasTextContent = false;
       let reasoningContent = "";
@@ -52,6 +63,61 @@ export class Enhancetoolransformer implements Transformer {
             }
           };
 
+          // Helper function to process completed tool calls
+          const processCompletedToolCall = (
+            data: any,
+            controller: ReadableStreamDefaultController,
+            encoder: TextEncoder
+          ) => {
+            let finalArgs = "";
+            try {
+              finalArgs = parseToolArguments(currentToolCall.arguments || "");
+            } catch (e: any) {
+              log(
+                `${e.message} ${
+                  e.stack
+                }  工具调用参数解析失败: ${JSON.stringify(
+                  currentToolCall
+                )}`
+              );
+              // Use original arguments if parsing fails
+              finalArgs = currentToolCall.arguments || "";
+            }
+
+            const delta = {
+              role: "assistant",
+              tool_calls: [
+                {
+                  function: {
+                    name: currentToolCall.name,
+                    arguments: finalArgs,
+                  },
+                  id: currentToolCall.id,
+                  index: currentToolCall.index,
+                  type: "function",
+                },
+              ],
+            };
+
+            // Remove content field entirely to prevent extra null values
+            const modifiedData = {
+              ...data,
+              choices: [
+                {
+                  ...data.choices[0],
+                  delta,
+                },
+              ],
+            };
+            // Remove content field if it exists
+            if (modifiedData.choices[0].delta.content !== undefined) {
+              delete modifiedData.choices[0].delta.content;
+            }
+
+            const modifiedLine = `data: ${JSON.stringify(modifiedData)}\n\n`;
+            controller.enqueue(encoder.encode(modifiedLine));
+          };
+
           const processLine = (
             line: string,
             context: {
@@ -71,67 +137,60 @@ export class Enhancetoolransformer implements Transformer {
               const jsonStr = line.slice(6);
               try {
                 const data = JSON.parse(jsonStr);
+
+                // Handle tool calls in streaming mode
                 if (data.choices?.[0]?.delta?.tool_calls?.length) {
+                  const toolCallDelta = data.choices[0].delta.tool_calls[0];
+
+                  // Initialize currentToolCall if this is the first chunk for this tool call
                   if (typeof currentToolCall.index === "undefined") {
-                    currentToolCall.index =
-                      data.choices?.[0]?.delta?.tool_calls[0].index;
-                    currentToolCall.name =
-                      data.choices?.[0]?.delta?.tool_calls[0].function.name;
-                    currentToolCall.id =
-                      data.choices?.[0]?.delta?.tool_calls[0].id;
-                    currentToolCall.arguments =
-                      data.choices?.[0]?.delta?.tool_calls[0].function.arguments;
+                    currentToolCall = {
+                      index: toolCallDelta.index,
+                      name: toolCallDelta.function?.name || "",
+                      id: toolCallDelta.id || "",
+                      arguments: toolCallDelta.function?.arguments || ""
+                    };
+                    if (toolCallDelta.function?.arguments) {
+                      toolCallDelta.function.arguments = ''
+                    }
+                    // Send the first chunk as-is
                     const modifiedLine = `data: ${JSON.stringify(data)}\n\n`;
                     controller.enqueue(encoder.encode(modifiedLine));
                     return;
-                  } else if (
-                    currentToolCall.index ===
-                    data.choices?.[0]?.delta?.tool_calls[0].index
-                  ) {
-                    currentToolCall.arguments +=
-                      data.choices?.[0]?.delta?.tool_calls[0].function.arguments;
+                  }
+                  // Accumulate arguments if this is a continuation of the current tool call
+                  else if (currentToolCall.index === toolCallDelta.index) {
+                    if (toolCallDelta.function?.arguments) {
+                      currentToolCall.arguments += toolCallDelta.function.arguments;
+                    }
+                    // Don't send intermediate chunks that only contain arguments
                     return;
                   }
-                  let finalArgs = "";
-                  try {
-                    finalArgs = parseToolArguments(currentToolCall.arguments);
-                  } catch (e: any) {
-                    log(
-                      `${e.message} ${
-                        e.stack
-                      }  工具调用参数解析失败: ${JSON.stringify(
-                        currentToolCall
-                      )}`
-                    );
-                  } finally {
-                    const delta = {
-                      role: "assistant",
-                      content: "",
-                      tool_calls: [
-                        {
-                          function: {
-                            arguments: finalArgs,
-                          },
-                          id: currentToolCall.id,
-                          index: currentToolCall.index,
-                          type: "function",
-                        },
-                      ],
+                  // If we have a different tool call index, process the previous one and start a new one
+                  else {
+                    // Process the completed tool call using helper function
+                    processCompletedToolCall(data, controller, encoder);
+
+                    // Start tracking the new tool call
+                    currentToolCall = {
+                      index: toolCallDelta.index,
+                      name: toolCallDelta.function?.name || "",
+                      id: toolCallDelta.id || "",
+                      arguments: toolCallDelta.function?.arguments || ""
                     };
-                    const modifiedLine = `data: ${JSON.stringify({
-                      ...data,
-                      choices: [
-                        {
-                          ...data.choices[0],
-                          delta,
-                        },
-                      ],
-                    })}\n\n`;
-                    controller.enqueue(encoder.encode(modifiedLine));
-                    currentToolCall = {};
+                    return;
                   }
                 }
 
+                // Handle finish_reason for tool_calls
+                if (data.choices?.[0]?.finish_reason === "tool_calls" && currentToolCall.index !== undefined) {
+                  // Process the final tool call using helper function
+                  processCompletedToolCall(data, controller, encoder);
+                  currentToolCall = {};
+                  return;
+                }
+
+                // Handle text content alongside tool calls
                 if (
                   data.choices?.[0]?.delta?.tool_calls?.length &&
                   context.hasTextContent()
@@ -140,49 +199,6 @@ export class Enhancetoolransformer implements Transformer {
                     data.choices[0].index += 1;
                   } else {
                     data.choices[0].index = 1;
-                  }
-                }
-
-                if (data.choices?.[0]?.finish_reason === "tool_calls") {
-                  try {
-                    const finalArgs = parseToolArguments(currentToolCall.arguments);
-                    log(`工具调用参数解析成功`);
-                    const delta = {
-                      role: "assistant",
-                      content: "",
-                      tool_calls: [
-                        {
-                          function: {
-                            arguments: finalArgs,
-                          },
-                          id: currentToolCall.id,
-                          index: currentToolCall.index,
-                          type: "function",
-                        },
-                      ],
-                    };
-                    const modifiedLine = `data: ${JSON.stringify({
-                      ...data,
-                      choices: [
-                        {
-                          ...data.choices[0],
-                          delta,
-                          finish_reason: null,
-                        },
-                      ],
-                    })}\n\n`;
-                    controller.enqueue(encoder.encode(modifiedLine));
-                    currentToolCall = {};
-                  } catch (e: any) {
-                    log(
-                      `${e.message} ${
-                        e.stack
-                      } 工具调用参数解析失败: ${JSON.stringify(
-                        currentToolCall
-                      )}`
-                    );
-                  } finally {
-                    currentToolCall = {};
                   }
                 }
 

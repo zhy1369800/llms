@@ -1,4 +1,4 @@
-import { log } from "../utils/log";
+import { log } from "./log";
 import { UnifiedChatRequest, UnifiedMessage } from "../types/llm";
 import { Content, ContentListUnion, Part, ToolListUnion } from "@google/genai";
 
