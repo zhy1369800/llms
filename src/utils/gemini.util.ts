@@ -238,6 +238,7 @@ export async function transformResponseOut(response: Response, providerName: str
       usage: {
         completion_tokens: jsonResponse.usageMetadata.candidatesTokenCount,
         prompt_tokens: jsonResponse.usageMetadata.promptTokenCount,
+        cached_content_token_count: jsonResponse.usageMetadata.cachedContentTokenCount || null,
         total_tokens: jsonResponse.usageMetadata.totalTokenCount,
       },
     };
@@ -305,6 +306,7 @@ export async function transformResponseOut(response: Response, providerName: str
               usage: {
                 completion_tokens: chunk.usageMetadata.candidatesTokenCount,
                 prompt_tokens: chunk.usageMetadata.promptTokenCount,
+                cached_content_token_count: chunk.usageMetadata.cachedContentTokenCount || null,
                 total_tokens: chunk.usageMetadata.totalTokenCount,
               },
             };
