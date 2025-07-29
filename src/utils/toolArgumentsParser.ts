@@ -1,45 +1,52 @@
 import JSON5 from "json5";
-import vm from "vm";
+import { jsonrepair } from "jsonrepair";
 import { log } from "@/utils/log";
 
 /**
  * 解析工具调用参数的函数
- * 先尝试使用JSON5解析，如果失败则使用vm模块进行兜底解析
- * 如果连兜底方案也失败，则返回原始数据
+ * Parse tool call arguments function
+ * 先尝试标准JSON解析，然后JSON5解析，最后使用jsonrepair进行安全修复
+ * First try standard JSON parsing, then JSON5 parsing, finally use jsonrepair for safe repair
  * 
- * @param argsString - 需要解析的参数字符串
- * @returns 解析后的参数对象或原始字符串
+ * @param argsString - 需要解析的参数字符串 / Parameter string to parse
+ * @returns 解析后的参数对象或安全的空对象 / Parsed parameter object or safe empty object
  */
 export function parseToolArguments(argsString: string): string {
+  // Handle empty or null input
+  if (!argsString || argsString.trim() === "" || argsString === "{}") {
+    return "{}";
+  }
+
   try {
-    // 首先尝试使用JSON5解析
-    const args = JSON5.parse(argsString);
-    log(`工具调用参数JSON5解析成功`);
-    return JSON.stringify(args);
-  } catch (e: any) {
-    // JSON5解析失败，尝试使用vm模块进行兜底解析
+    // First attempt: Standard JSON parsing
+    JSON.parse(argsString);
+    log(`工具调用参数标准JSON解析成功 / Tool arguments standard JSON parsing successful`);
+    return argsString;
+  } catch (jsonError: any) {
     try {
-      const context = { data: null };
-      vm.createContext(context);
-      vm.runInContext(`data = ${argsString}`, context);
-      log(`工具调用参数兜底解析成功`);
-      return JSON.stringify(context.data);
-    } catch (fallbackError: any) {
-      // 兜底方案也失败了，返回原数据
-      log(
-        `${e.message} ${
-          e.stack
-        }  工具调用参数JSON5解析失败: ${JSON.stringify(
-          argsString
-        )}`
-      );
-      log(
-        `${fallbackError.message} ${
-          fallbackError.stack
-        }  工具调用参数兜底解析也失败了，返回原数据`
-      );
-      // 返回原始数据
-      return argsString;
+      // Second attempt: JSON5 parsing for relaxed syntax
+      const args = JSON5.parse(argsString);
+      log(`工具调用参数JSON5解析成功 / Tool arguments JSON5 parsing successful`);
+      return JSON.stringify(args);
+    } catch (json5Error: any) {
+      try {
+        // Third attempt: Safe JSON repair without code execution
+        const repairedJson = jsonrepair(argsString);
+        log(`工具调用参数安全修复成功 / Tool arguments safely repaired`);
+        return repairedJson;
+      } catch (repairError: any) {
+        // All parsing attempts failed - log errors and return safe fallback
+        log(
+          `JSON解析失败 / JSON parsing failed: ${jsonError.message}. ` +
+          `JSON5解析失败 / JSON5 parsing failed: ${json5Error.message}. ` +
+          `JSON修复失败 / JSON repair failed: ${repairError.message}. ` +
+          `输入数据 / Input data: ${JSON.stringify(argsString)}`
+        );
+        
+        // Return safe empty object as fallback instead of potentially malformed input
+        log(`返回安全的空对象作为后备方案 / Returning safe empty object as fallback`);
+        return "{}";
+      }
     }
   }
 }
