@@ -1,4 +1,5 @@
 import { AnthropicTransformer } from "./anthropic.transformer";
+import { AnthropicPassthroughTransformer } from "./anthropicPassthrough.transformer";
 import { GeminiTransformer } from "./gemini.transformer";
 import { VertexGeminiTransformer } from "./vertex-gemini.transformer";
 import { DeepseekTransformer } from "./deepseek.transformer";
@@ -13,6 +14,7 @@ import { SamplingTransformer } from "./sampling.transformer";
 
 export default {
   AnthropicTransformer,
+  AnthropicPassthroughTransformer,
   GeminiTransformer,
   VertexGeminiTransformer,
   DeepseekTransformer,
