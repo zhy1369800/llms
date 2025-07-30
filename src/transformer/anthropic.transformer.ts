@@ -136,7 +136,7 @@ export class AnthropicTransformer implements Transformer {
       max_tokens: request.max_tokens,
       temperature: request.temperature,
       stream: request.stream,
-      tools: request.tools
+      tools: request.tools?.length
         ? this.convertAnthropicToolsToUnified(request.tools)
         : undefined,
       tool_choice: request.tool_choice,

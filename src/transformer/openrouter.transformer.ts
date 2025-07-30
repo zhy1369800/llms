@@ -27,6 +27,19 @@ export class OpenrouterTransformer implements Transformer {
           delete msg.cache_control;
         }
       });
+    } else {
+      request.messages.forEach((msg) => {
+        if (Array.isArray(msg.content)) {
+          msg.content.forEach((item: any) => {
+            if (item.type === "image_url") {
+              if (!item.image_url.url.startsWith("http")) {
+                item.image_url.url = `data:${item.media_type};base64,${item.image_url.url}`;
+              }
+              delete item.media_type;
+            }
+          });
+        }
+      });
     }
     return request;
   }

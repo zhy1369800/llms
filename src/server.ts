@@ -70,9 +70,12 @@ class Server {
     this.configService = new ConfigService(options);
     this.transformerService = new TransformerService(this.configService);
     this.transformerService.initialize().finally(() => {
-      this.providerService = new ProviderService(this.configService, this.transformerService);
+      this.providerService = new ProviderService(
+        this.configService,
+        this.transformerService
+      );
       this.llmService = new LLMService(this.providerService);
-    })
+    });
     this.app = createApp();
   }
 
@@ -116,6 +119,7 @@ class Server {
       this.app.addHook(
         "preHandler",
         async (req: FastifyRequest, reply: FastifyReply) => {
+          if (req.url.startsWith("/api") || req.method !== "POST") return;
           try {
             const body = req.body as any;
             if (!body || !body.model) {

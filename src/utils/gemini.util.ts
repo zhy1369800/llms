@@ -14,6 +14,7 @@ export function cleanupParameters(obj: any) {
 
   delete obj.$schema;
   delete obj.additionalProperties;
+  delete obj.const;
 
   if (
     obj.type === "string" &&
