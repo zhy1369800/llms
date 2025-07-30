@@ -10,7 +10,7 @@ import { log } from "@/utils/log";
  */
 export class AnthropicPassthroughTransformer implements Transformer {
   name = "anthropicpassthrough";
-  endPoint = "/v1/messages";
+  endPoint = "/v1/messages/passthrough";
 
   /**
    * transformRequestOut: 将 Anthropic 请求转换为统一格式（仅用于内部处理）
