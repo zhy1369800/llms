@@ -12,13 +12,14 @@ import {
 import { sendUnifiedRequest } from "@/utils/request";
 import { createApiError } from "./middleware";
 import { log } from "../utils/log";
+import { version } from "../../package.json";
 
 export const registerApiRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   // Health and info endpoints
   fastify.get("/", async (request, reply) => {
-    return { message: "LLMs API", version: "1.0.0" };
+    return { message: "LLMs API", version };
   });
 
   fastify.get("/health", async (request, reply) => {
