@@ -11,7 +11,7 @@ import { log } from "@/utils/log";
  */
 export class AnthropicPassthroughTransformer implements Transformer {
   name = "anthropicpassthrough";
-  endPoint = "/v1/messages";
+  endPoint = "/v1/messages/passthrough";
   isPassthrough = true; // 特殊标记，用于在 routes.ts 中识别需要直通处理
 
   /**
