@@ -10,6 +10,7 @@ import { CleancacheTransformer } from "./cleancache.transformer";
 import { EnhanceToolTransformer } from "./enhancetool.transformer";
 import { ReasoningTransformer } from "./reasoning.transformer";
 import { SamplingTransformer } from "./sampling.transformer";
+import { MaxCompletionTokens } from "./maxcompletiontokens.transformer";
 
 export default {
   AnthropicTransformer,
@@ -23,5 +24,6 @@ export default {
   CleancacheTransformer,
   EnhanceToolTransformer,
   ReasoningTransformer,
-  SamplingTransformer
+  SamplingTransformer,
+  MaxCompletionTokens
 };
