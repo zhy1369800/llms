@@ -5,50 +5,41 @@ import { log } from "@/utils/log";
 /**
  * AnthropicPassthroughTransformer
  * 
- * 这个 transformer 专门用于 Anthropic 官方 API 直通，不做任何格式转换
- * 直接将原始 Anthropic 请求透传到 Anthropic API 端点
- * 特殊标记：isPassthrough = true 表示跳过所有其他 transformer 处理
+ * 这个 transformer 专门用于自动启用 Anthropic 直通模式
+ * 它会自动给请求添加 passthrough 标记，无需用户手动设置
+ * 
+ * 使用场景：
+ * - 当你想要所有请求都直通到 Anthropic API 时
+ * - 不需要格式转换，直接使用原生 Anthropic 格式
  */
 export class AnthropicPassthroughTransformer implements Transformer {
-  name = "anthropicpassthrough";
-  endPoint = "/v1/messages/passthrough";
-  isPassthrough = true; // 特殊标记，用于在 routes.ts 中识别需要直通处理
+    name = "anthropicPassthrough";
+    // 注意：这个 transformer 没有 endPoint，它是作为 provider transformer 使用的
 
-  /**
-   * transformRequestOut: 标记为直通请求，不做任何转换
-   */
-  async transformRequestOut(request: Record<string, any>): Promise<UnifiedChatRequest> {
-    log("AnthropicPassthrough: Marking request for direct passthrough", JSON.stringify(request, null, 2));
+    /**
+     * transformRequestIn: 自动添加 passthrough 标记
+     */
+    async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
+        log("AnthropicPassthrough: Adding passthrough marker to request");
 
-    // 直接返回原始请求，添加直通标记
-    return {
-      ...request,
-      _isPassthrough: true,
-    } as UnifiedChatRequest;
-  }
+        return {
+            ...request,
+            passthrough: true,
+        } as UnifiedChatRequest;
+    }
 
-  /**
-   * transformRequestIn: 直通模式下不应该被调用
-   */
-  async transformRequestIn(request: UnifiedChatRequest): Promise<Record<string, any>> {
-    log("AnthropicPassthrough transformRequestIn: This should not be called in passthrough mode");
-    const { _isPassthrough, ...anthropicRequest } = request as any;
-    return anthropicRequest;
-  }
+    /**
+     * 其他方法保持默认行为（不做任何处理）
+     */
+    async transformRequestOut(request: Record<string, any>): Promise<UnifiedChatRequest> {
+        return request as UnifiedChatRequest;
+    }
 
-  /**
-   * transformResponseIn: 直通模式下不应该被调用
-   */
-  async transformResponseIn(response: Response): Promise<Response> {
-    log("AnthropicPassthrough transformResponseIn: This should not be called in passthrough mode");
-    return response;
-  }
+    async transformResponseIn(response: Response): Promise<Response> {
+        return response;
+    }
 
-  /**
-   * transformResponseOut: 直通模式下不应该被调用
-   */
-  async transformResponseOut(response: Response): Promise<Response> {
-    log("AnthropicPassthrough transformResponseOut: This should not be called in passthrough mode");
-    return response;
-  }
-}
+    async transformResponseOut(response: Response): Promise<Response> {
+        return response;
+    }
+} 

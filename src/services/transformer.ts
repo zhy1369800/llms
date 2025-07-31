@@ -20,22 +20,6 @@ export class TransformerService {
   }
 
   registerTransformer(name: string, transformer: Transformer): void {
-    // 当注册 anthropicpassthrough 时，移除可能已存在的 Anthropic transformer
-    if (name.toLowerCase() === "anthropicpassthrough") {
-      if (this.transformers.has("Anthropic")) {
-        this.transformers.delete("Anthropic");
-        log("TransformerService: removed existing Anthropic transformer due to anthropicpassthrough registration");
-      }
-    }
-
-    // 当注册 Anthropic 时，检查是否已有 anthropicpassthrough，如果有则跳过注册
-    if (name === "Anthropic") {
-      if (this.transformers.has("anthropicpassthrough")) {
-        log("TransformerService: skip registering Anthropic transformer because anthropicpassthrough already exists");
-        return;
-      }
-    }
-
     this.transformers.set(name, transformer);
     log(
       `register transformer: ${name}${transformer.endPoint
@@ -139,10 +123,10 @@ export class TransformerService {
         .forEach((TransformerStatic: TransformerConstructor) => {
           if ('TransformerName' in TransformerStatic && typeof TransformerStatic.TransformerName === 'string') {
             this.registerTransformer(TransformerStatic.TransformerName, TransformerStatic);
-        } else {
+          } else {
             const transformerInstance = new TransformerStatic();
             this.registerTransformer(transformerInstance.name!, transformerInstance);
-        }
+          }
         })
     } catch (error) {
       log("transformer regist error:", error);

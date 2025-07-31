@@ -47,27 +47,15 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           }
           let requestBody = body;
           let config = {};
-          if (typeof transformer.transformRequestOut === "function") {
-            const transformOut = await transformer.transformRequestOut(
-              body as UnifiedChatRequest
-            );
-            if (transformOut.body) {
-              requestBody = transformOut.body;
-              config = transformOut.config || {};
-            } else {
-              requestBody = transformOut;
-            }
-          }
-          log('use transformers:',provider.transformer?.use)
+
+          // 优先执行 AnthropicPassthroughTransformer (如果存在)
           if (provider.transformer?.use?.length) {
-            for (const transformer of provider.transformer.use) {
-              if (
-                !transformer ||
-                typeof transformer.transformRequestIn !== "function"
-              ) {
-                continue;
-              }
-              const transformIn = await transformer.transformRequestIn(
+            const passthroughTransformer = provider.transformer.use.find(
+              (t: any) => t && t.name === 'anthropicPassthrough'
+            );
+            if (passthroughTransformer && typeof passthroughTransformer.transformRequestIn === "function") {
+              log('Executing AnthropicPassthroughTransformer first');
+              const transformIn = await passthroughTransformer.transformRequestIn(
                 requestBody,
                 provider
               );
@@ -79,6 +67,58 @@ export const registerApiRoutes: FastifyPluginAsync = async (
               }
             }
           }
+
+          // 然后执行 endpoint transformer (AnthropicTransformer)
+          // 它会检测 passthrough 标记并决定是否进行格式转换
+          if (typeof transformer.transformRequestOut === "function") {
+            const transformOut = await transformer.transformRequestOut(
+              requestBody as UnifiedChatRequest
+            );
+            if (transformOut.body) {
+              requestBody = transformOut.body;
+              config = transformOut.config || {};
+            } else {
+              requestBody = transformOut;
+            }
+          }
+
+          // 检测直通模式，跳过其他 transformers
+          const isPassthrough = (requestBody as any)._isPassthrough;
+          if (isPassthrough) {
+            log("Detected passthrough mode, skipping remaining transformers");
+            // 移除内部标记
+            const { _isPassthrough, ...cleanBody } = requestBody as any;
+            requestBody = cleanBody;
+          } else {
+            // 只有非直通模式才执行剩余的 provider transformers
+            log('use transformers:', provider.transformer?.use)
+            if (provider.transformer?.use?.length) {
+              for (const transformer of provider.transformer.use) {
+                // 跳过已经执行过的 AnthropicPassthroughTransformer
+                if (transformer && transformer.name === 'anthropicPassthrough') {
+                  continue;
+                }
+                if (
+                  !transformer ||
+                  typeof transformer.transformRequestIn !== "function"
+                ) {
+                  continue;
+                }
+                const transformIn = await transformer.transformRequestIn(
+                  requestBody,
+                  provider
+                );
+                if (transformIn.body) {
+                  requestBody = transformIn.body;
+                  config = { ...config, ...transformIn.config };
+                } else {
+                  requestBody = transformIn;
+                }
+              }
+            }
+          }
+
+          // 处理 model-specific transformers (无论是否直通模式都需要检查)
           if (provider.transformer?.[req.body.model]?.use?.length) {
             for (const transformer of provider.transformer[req.body.model].use) {
               if (
@@ -140,7 +180,8 @@ export const registerApiRoutes: FastifyPluginAsync = async (
           }
           if (transformer.transformResponseIn) {
             finalResponse = await transformer.transformResponseIn(
-              finalResponse
+              finalResponse,
+              { isPassthrough }
             );
           }
 

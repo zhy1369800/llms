@@ -1,6 +1,6 @@
 import { ChatCompletion } from "openai/resources";
 import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "@/types/llm";
-import { Transformer } from "@/types/transformer";
+import { Transformer, TransformerContext } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { v4 as uuidv4 } from "uuid";
 import { title } from "process";
@@ -14,6 +14,16 @@ export class AnthropicTransformer implements Transformer {
   ): Promise<UnifiedChatRequest> {
     log("Anthropic Request:", JSON.stringify(request, null, 2));
 
+    // 检测直通模式（仅检测 passthrough 字段）
+    if (request.passthrough === true) {
+      log("AnthropicTransformer: Detected passthrough mode, returning original request");
+      // 移除 passthrough 标记，添加内部标记
+      const { passthrough, ...cleanRequest } = request;
+      return {
+        ...cleanRequest,
+        _isPassthrough: true,
+      } as unknown as UnifiedChatRequest;
+    }
     const messages: UnifiedMessage[] = [];
 
     if (request.system) {
@@ -144,7 +154,12 @@ export class AnthropicTransformer implements Transformer {
     return result;
   }
 
-  async transformResponseIn(response: Response): Promise<Response> {
+  async transformResponseIn(response: Response, context?: TransformerContext): Promise<Response> {
+    if (context?.isPassthrough) {
+      log("AnthropicTransformer: Skipping transformResponseIn due to passthrough mode.");
+      return response;
+    }
+
     const isStream = response.headers
       .get("Content-Type")
       ?.includes("text/event-stream");
@@ -803,12 +818,12 @@ export class AnthropicTransformer implements Transformer {
         choice.finish_reason === "stop"
           ? "end_turn"
           : choice.finish_reason === "length"
-          ? "max_tokens"
-          : choice.finish_reason === "tool_calls"
-          ? "tool_use"
-          : choice.finish_reason === "content_filter"
-          ? "stop_sequence"
-          : "end_turn",
+            ? "max_tokens"
+            : choice.finish_reason === "tool_calls"
+              ? "tool_use"
+              : choice.finish_reason === "content_filter"
+                ? "stop_sequence"
+                : "end_turn",
       stop_sequence: null,
       usage: {
         input_tokens: openaiResponse.usage?.prompt_tokens || 0,

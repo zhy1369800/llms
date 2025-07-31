@@ -17,12 +17,17 @@ interface TransformerWithInstanceName {
 
 export type TransformerConstructor = TransformerWithStaticName;
 
+export interface TransformerContext {
+  isPassthrough?: boolean;
+  [key: string]: any;
+}
+
 export type Transformer = {
   transformRequestIn?: (
     request: UnifiedChatRequest,
     provider: LLMProvider
   ) => Promise<Record<string, any>>;
-  transformResponseIn?: (response: Response) => Promise<Response>;
+  transformResponseIn?: (response: Response, context?: TransformerContext) => Promise<Response>;
 
   // 将请求格式转换为通用的格式
   transformRequestOut?: (request: any) => Promise<UnifiedChatRequest>;
