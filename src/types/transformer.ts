@@ -18,7 +18,6 @@ interface TransformerWithInstanceName {
 export type TransformerConstructor = TransformerWithStaticName;
 
 export interface TransformerContext {
-  isPassthrough?: boolean;
   [key: string]: any;
 }
 
@@ -36,4 +35,5 @@ export type Transformer = {
 
   endPoint?: string;
   name?: string;
+  auth?: (request: any, provider: LLMProvider) => Promise<any>;
 };

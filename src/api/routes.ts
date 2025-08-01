@@ -5,7 +5,6 @@ import {
   FastifyReply,
 } from "fastify";
 import {
-  UnifiedChatRequest,
   RegisterProviderRequest,
   LLMProvider,
 } from "@/types/llm";
@@ -14,189 +13,304 @@ import { createApiError } from "./middleware";
 import { log } from "../utils/log";
 import { version } from "../../package.json";
 
+/**
+ * 处理transformer端点的主函数
+ * 协调整个请求处理流程：验证提供者、处理请求转换器、发送请求、处理响应转换器、格式化响应
+ */
+async function handleTransformerEndpoint(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  fastify: FastifyInstance,
+  transformer: any
+) {
+  const body = req.body as any;
+  const providerName = req.provider!;
+  const provider = fastify._server!.providerService.getProvider(providerName);
+
+  // 验证提供者是否存在
+  if (!provider) {
+    throw createApiError(
+      `Provider '${providerName}' not found`,
+      404,
+      "provider_not_found"
+    );
+  }
+
+  // 处理请求转换器链
+  const { requestBody, config, bypass } = await processRequestTransformers(
+    body,
+    provider,
+    transformer
+  );
+
+  // 发送请求到LLM提供者
+  const response = await sendRequestToProvider(
+    requestBody,
+    config,
+    provider,
+    fastify,
+    bypass,
+    transformer
+  );
+
+  // 处理响应转换器链
+  const finalResponse = await processResponseTransformers(
+    response,
+    provider,
+    transformer,
+    bypass
+  );
+
+  // 格式化并返回响应
+  return formatResponse(finalResponse, reply, body);
+}
+
+/**
+ * 处理请求转换器链
+ * 依次执行transformRequestOut、provider transformers、model-specific transformers
+ * 返回处理后的请求体、配置和是否跳过转换器的标志
+ */
+async function processRequestTransformers(
+  body: any,
+  provider: any,
+  transformer: any
+) {
+  let requestBody = body;
+  let config = {};
+  let bypass = false;
+
+  // 检查是否应该跳过转换器（透传参数）
+  bypass = shouldBypassTransformers(provider, transformer, body);
+
+  // 执行transformer的transformRequestOut方法
+  if (!bypass && typeof transformer.transformRequestOut === "function") {
+    const transformOut = await transformer.transformRequestOut(
+      requestBody
+    );
+    if (transformOut.body) {
+      requestBody = transformOut.body;
+      config = transformOut.config || {};
+    } else {
+      requestBody = transformOut;
+    }
+  }
+
+  // 执行provider级别的转换器
+  if (!bypass && provider.transformer?.use?.length) {
+    !bypass && log('use transformers:', provider.transformer?.use);
+    for (const providerTransformer of provider.transformer.use) {
+      // 跳过特定转换器（如anthropicPassthrough）
+      if (shouldSkipTransformer(providerTransformer)) {
+        continue;
+      }
+      if (
+        !providerTransformer ||
+        typeof providerTransformer.transformRequestIn !== "function"
+      ) {
+        continue;
+      }
+      const transformIn = await providerTransformer.transformRequestIn(
+        requestBody,
+        provider
+      );
+      if (transformIn.body) {
+        requestBody = transformIn.body;
+        config = { ...config, ...transformIn.config };
+      } else {
+        requestBody = transformIn;
+      }
+    }
+  }
+
+  // 执行模型特定的转换器
+  if (!bypass && provider.transformer?.[body.model]?.use?.length) {
+    for (const modelTransformer of provider.transformer[body.model].use) {
+      if (
+        !modelTransformer ||
+        typeof modelTransformer.transformRequestIn !== "function"
+      ) {
+        continue;
+      }
+      requestBody = await modelTransformer.transformRequestIn(
+        requestBody,
+        provider
+      );
+    }
+  }
+
+  return { requestBody, config, bypass };
+}
+
+/**
+ * 判断是否应该跳过转换器（透传参数）
+ * 当provider只使用一个transformer且该transformer与当前transformer相同时，跳过其他转换器
+ */
+function shouldBypassTransformers(provider: any, transformer: any, body: any): boolean {
+  return (
+    provider.transformer?.use?.length === 1 &&
+    provider.transformer.use[0].name === transformer.name &&
+    (!provider.transformer?.[body.model]?.use.length ||
+      (provider.transformer?.[body.model]?.use.length === 1 &&
+        provider.transformer?.[body.model]?.use[0].name === transformer.name))
+  );
+}
+
+/**
+ * 判断是否应该跳过特定的转换器
+ * 目前用于跳过已经执行过的AnthropicPassthroughTransformer
+ */
+function shouldSkipTransformer(providerTransformer: any): boolean {
+  return (
+    providerTransformer &&
+    providerTransformer.name === 'anthropicPassthrough'
+  );
+}
+
+/**
+ * 发送请求到LLM提供者
+ * 处理认证、构建请求配置、发送请求并处理错误
+ */
+async function sendRequestToProvider(
+  requestBody: any,
+  config: any,
+  provider: any,
+  fastify: FastifyInstance,
+  bypass: boolean,
+  transformer: any
+) {
+  const url = config.url || new URL(provider.baseUrl);
+
+  // 在透传参数下处理认证
+  if (bypass && typeof transformer.auth === "function") {
+    const auth = await transformer.auth(requestBody, provider);
+    if (auth.body) {
+      requestBody = auth.body;
+      config = { ...config, ...auth.config };
+    } else {
+      requestBody = auth;
+    }
+  }
+
+  // 发送HTTP请求
+  const response = await sendUnifiedRequest(url, requestBody, {
+    httpsProxy: fastify._server!.configService.getHttpsProxy(),
+    ...config,
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      ...(config?.headers || {}),
+    },
+  });
+
+  // 处理请求错误
+  if (!response.ok) {
+    const errorText = await response.text();
+    log(`Error response from ${url}: ${errorText}`);
+    throw createApiError(
+      `Error from provider: ${errorText}`,
+      response.status,
+      "provider_response_error"
+    );
+  }
+
+  return response;
+}
+
+/**
+ * 处理响应转换器链
+ * 依次执行provider transformers、model-specific transformers、transformer的transformResponseIn
+ */
+async function processResponseTransformers(
+  response: any,
+  provider: any,
+  transformer: any,
+  bypass: boolean
+) {
+  let finalResponse = response;
+
+  // 执行provider级别的响应转换器
+  if (!bypass && provider.transformer?.use?.length) {
+    for (const providerTransformer of provider.transformer.use) {
+      if (
+        !providerTransformer ||
+        typeof providerTransformer.transformResponseOut !== "function"
+      ) {
+        continue;
+      }
+      finalResponse = await providerTransformer.transformResponseOut(
+        finalResponse
+      );
+    }
+  }
+
+  // 执行模型特定的响应转换器
+  if (!bypass && provider.transformer?.[response.body?.model]?.use?.length) {
+    for (const modelTransformer of provider.transformer[response.body?.model].use) {
+      if (
+        !modelTransformer ||
+        typeof modelTransformer.transformResponseOut !== "function"
+      ) {
+        continue;
+      }
+      finalResponse = await modelTransformer.transformResponseOut(
+        finalResponse
+      );
+    }
+  }
+
+  // 执行transformer的transformResponseIn方法
+  if (!bypass && transformer.transformResponseIn) {
+    finalResponse = await transformer.transformResponseIn(
+      finalResponse,
+    );
+  }
+
+  return finalResponse;
+}
+
+/**
+ * 格式化并返回响应
+ * 处理HTTP状态码、流式响应和普通响应的格式化
+ */
+function formatResponse(response: any, reply: FastifyReply, body: any) {
+  // 设置HTTP状态码
+  if (!response.ok) {
+    reply.code(response.status);
+  }
+
+  // 处理流式响应
+  const isStream = body?.stream === true;
+  if (isStream) {
+    reply.header("Content-Type", "text/event-stream");
+    reply.header("Cache-Control", "no-cache");
+    reply.header("Connection", "keep-alive");
+    return reply.send(response.body);
+  } else {
+    // 处理普通JSON响应
+    return response.json();
+  }
+}
+
 export const registerApiRoutes: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   // Health and info endpoints
-  fastify.get("/", async (request, reply) => {
+  fastify.get("/", async () => {
     return { message: "LLMs API", version };
   });
 
-  fastify.get("/health", async (request, reply) => {
+  fastify.get("/health", async () => {
     return { status: "ok", timestamp: new Date().toISOString() };
   });
 
   const transformersWithEndpoint =
     fastify._server!.transformerService.getTransformersWithEndpoint();
 
-  for (const { name, transformer } of transformersWithEndpoint) {
+  for (const { transformer } of transformersWithEndpoint) {
     if (transformer.endPoint) {
       fastify.post(
         transformer.endPoint,
         async (req: FastifyRequest, reply: FastifyReply) => {
-          const body = req.body as any;
-          const providerNmae = req.provider!;
-          const provider =
-            fastify._server!.providerService.getProvider(providerNmae);
-          if (!provider) {
-            throw createApiError(
-              `Provider '${providerNmae}' not found`,
-              404,
-              "provider_not_found"
-            );
-          }
-          let requestBody = body;
-          let config = {};
-
-          // 优先执行 AnthropicPassthroughTransformer (如果存在)
-          if (provider.transformer?.use?.length) {
-            const passthroughTransformer = provider.transformer.use.find(
-              (t: any) => t && t.name === 'anthropicPassthrough'
-            );
-            if (passthroughTransformer && typeof passthroughTransformer.transformRequestIn === "function") {
-              log('Executing AnthropicPassthroughTransformer first');
-              const transformIn = await passthroughTransformer.transformRequestIn(
-                requestBody,
-                provider
-              );
-              if (transformIn.body) {
-                requestBody = transformIn.body;
-                config = { ...config, ...transformIn.config };
-              } else {
-                requestBody = transformIn;
-              }
-            }
-          }
-
-          // 然后执行 endpoint transformer (AnthropicTransformer)
-          // 它会检测 passthrough 标记并决定是否进行格式转换
-          if (typeof transformer.transformRequestOut === "function") {
-            const transformOut = await transformer.transformRequestOut(
-              requestBody as UnifiedChatRequest
-            );
-            if (transformOut.body) {
-              requestBody = transformOut.body;
-              config = transformOut.config || {};
-            } else {
-              requestBody = transformOut;
-            }
-          }
-
-          // 检测直通模式，跳过其他 transformers
-          const isPassthrough = (requestBody as any)._isPassthrough;
-          if (isPassthrough) {
-            log("Detected passthrough mode, skipping remaining transformers");
-            // 移除内部标记
-            const { _isPassthrough, ...cleanBody } = requestBody as any;
-            requestBody = cleanBody;
-          } else {
-            // 只有非直通模式才执行剩余的 provider transformers
-            log('use transformers:', provider.transformer?.use)
-            if (provider.transformer?.use?.length) {
-              for (const transformer of provider.transformer.use) {
-                // 跳过已经执行过的 AnthropicPassthroughTransformer
-                if (transformer && transformer.name === 'anthropicPassthrough') {
-                  continue;
-                }
-                if (
-                  !transformer ||
-                  typeof transformer.transformRequestIn !== "function"
-                ) {
-                  continue;
-                }
-                const transformIn = await transformer.transformRequestIn(
-                  requestBody,
-                  provider
-                );
-                if (transformIn.body) {
-                  requestBody = transformIn.body;
-                  config = { ...config, ...transformIn.config };
-                } else {
-                  requestBody = transformIn;
-                }
-              }
-            }
-          }
-
-          // 处理 model-specific transformers (无论是否直通模式都需要检查)
-          if (provider.transformer?.[req.body.model]?.use?.length) {
-            for (const transformer of provider.transformer[req.body.model].use) {
-              if (
-                !transformer ||
-                typeof transformer.transformRequestIn !== "function"
-              ) {
-                continue;
-              }
-              requestBody = await transformer.transformRequestIn(
-                requestBody,
-                provider
-              );
-            }
-          }
-          const url = config.url || new URL(provider.baseUrl);
-          const response = await sendUnifiedRequest(url, requestBody, {
-            httpsProxy: fastify._server!.configService.getHttpsProxy(),
-            ...config,
-            headers: {
-              Authorization: `Bearer ${provider.apiKey}`,
-              ...(config?.headers || {}),
-            },
-          });
-          if (!response.ok) {
-            const errorText = await response.text();
-            log(`Error response from ${url}: ${errorText}`);
-            throw createApiError(
-              `Error from provider: ${errorText}`,
-              response.status,
-              "provider_response_error"
-            );
-          }
-          let finalResponse = response;
-          if (provider.transformer?.use?.length) {
-            for (const transformer of provider.transformer.use) {
-              if (
-                !transformer ||
-                typeof transformer.transformResponseOut !== "function"
-              ) {
-                continue;
-              }
-              finalResponse = await transformer.transformResponseOut(
-                finalResponse
-              );
-            }
-          }
-          if (provider.transformer?.[req.body.model]?.use?.length) {
-            for (const transformer of provider.transformer[req.body.model].use) {
-              if (
-                !transformer ||
-                typeof transformer.transformResponseOut !== "function"
-              ) {
-                continue;
-              }
-              finalResponse = await transformer.transformResponseOut(
-                finalResponse
-              );
-            }
-          }
-          if (transformer.transformResponseIn) {
-            finalResponse = await transformer.transformResponseIn(
-              finalResponse,
-              { isPassthrough }
-            );
-          }
-
-          if (!finalResponse.ok) {
-            reply.code(finalResponse.status);
-          }
-          const isStream = body?.stream === true;
-          if (isStream) {
-            reply.header("Content-Type", "text/event-stream");
-            reply.header("Cache-Control", "no-cache");
-            reply.header("Connection", "keep-alive");
-            return reply.send(finalResponse.body);
-          } else {
-            return finalResponse.json();
-          }
+          return handleTransformerEndpoint(req, reply, fastify, transformer);
         }
       );
     }
@@ -225,7 +339,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       reply: FastifyReply
     ) => {
       // Validation
-      const { name, type, baseUrl, apiKey, models } = request.body;
+      const { name, baseUrl, apiKey, models } = request.body;
 
       if (!name?.trim()) {
         throw createApiError(
@@ -256,22 +370,19 @@ export const registerApiRoutes: FastifyPluginAsync = async (
       }
 
       // Check if provider already exists
-      if (fastify._server!.providerService.getProvider(id)) {
+      if (fastify._server!.providerService.getProvider(request.body.name)) {
         throw createApiError(
-          `Provider with ID '${id}' already exists`,
+          `Provider with name '${request.body.name}' already exists`,
           400,
           "provider_exists"
         );
       }
 
-      const provider = fastify._server!.providerService.registerProvider(
-        request.body
-      );
-      return provider;
+      return fastify._server!.providerService.registerProvider(request.body);
     }
   );
 
-  fastify.get("/providers", async (request, reply) => {
+  fastify.get("/providers", async () => {
     return fastify._server!.providerService.getProviders();
   });
 
@@ -286,12 +397,12 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    async (request: FastifyRequest<{ Params: { id: string } }>) => {
       const provider = fastify._server!.providerService.getProvider(
         request.params.id
       );
       if (!provider) {
-        return reply.code(404).send({ error: "Provider not found" });
+        throw createApiError("Provider not found", 404, "provider_not_found");
       }
       return provider;
     }
@@ -331,7 +442,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         request.body
       );
       if (!provider) {
-        return reply.code(404).send({ error: "Provider not found" });
+        throw createApiError("Provider not found", 404, "provider_not_found");
       }
       return provider;
     }
@@ -348,12 +459,12 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    async (request: FastifyRequest<{ Params: { id: string } }>) => {
       const success = fastify._server!.providerService.deleteProvider(
         request.params.id
       );
       if (!success) {
-        return reply.code(404).send({ error: "Provider not found" });
+        throw createApiError("Provider not found", 404, "provider_not_found");
       }
       return { message: "Provider deleted successfully" };
     }
@@ -387,7 +498,7 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         request.body.enabled
       );
       if (!success) {
-        return reply.code(404).send({ error: "Provider not found" });
+        throw createApiError("Provider not found", 404, "provider_not_found");
       }
       return {
         message: `Provider ${request.body.enabled ? "enabled" : "disabled"

@@ -1,13 +1,23 @@
 import { ChatCompletion } from "openai/resources";
-import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "@/types/llm";
+import {LLMProvider, UnifiedChatRequest, UnifiedMessage, UnifiedTool} from "@/types/llm";
 import { Transformer, TransformerContext } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { v4 as uuidv4 } from "uuid";
-import { title } from "process";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
   endPoint = "/v1/messages";
+
+  async auth(request: any, provider: LLMProvider): Promise<any> {
+    return {
+      body: request,
+      config: {
+        headers: {
+          'x-api-key': provider.apiKey
+        }
+      }
+    }
+  }
 
   async transformRequestOut(
     request: Record<string, any>
@@ -21,7 +31,6 @@ export class AnthropicTransformer implements Transformer {
       const { passthrough, ...cleanRequest } = request;
       return {
         ...cleanRequest,
-        _isPassthrough: true,
       } as unknown as UnifiedChatRequest;
     }
     const messages: UnifiedMessage[] = [];
@@ -155,11 +164,6 @@ export class AnthropicTransformer implements Transformer {
   }
 
   async transformResponseIn(response: Response, context?: TransformerContext): Promise<Response> {
-    if (context?.isPassthrough) {
-      log("AnthropicTransformer: Skipping transformResponseIn due to passthrough mode.");
-      return response;
-    }
-
     const isStream = response.headers
       .get("Content-Type")
       ?.includes("text/event-stream");
