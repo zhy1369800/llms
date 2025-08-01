@@ -181,32 +181,95 @@ export async function transformResponseOut(response: Response, providerName: str
           log(`${providerName} chunk:`, chunkStr);
           try {
             const chunk = JSON.parse(chunkStr);
-            const res = {
-              choices: [
-                {
-                  delta: {
-                    role: "assistant",
-                    content: chunk.content?.[0]?.text || '',
+            
+            // 处理 Anthropic 原生格式的流式响应
+            if (chunk.type === "content_block_delta" && chunk.delta?.type === "text_delta") {
+              // 这是 Anthropic 原生格式，需要转换为 OpenAI 格式
+              const res = {
+                choices: [
+                  {
+                    delta: {
+                      role: "assistant",
+                      content: chunk.delta.text || '',
+                    },
+                    finish_reason: null,
+                    index: 0,
+                    logprobs: null,
                   },
-                  finish_reason: chunk.stop_reason?.toLowerCase() || null,
-                  index: 0,
-                  logprobs: null,
+                ],
+                created: parseInt(new Date().getTime() / 1000 + "", 10),
+                id: chunk.id || "",
+                model: chunk.model || "",
+                object: "chat.completion.chunk",
+                system_fingerprint: "fp_a49d71b8a1",
+                usage: {
+                  completion_tokens: chunk.usage?.output_tokens || 0,
+                  prompt_tokens: chunk.usage?.input_tokens || 0,
+                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
                 },
-              ],
-              created: parseInt(new Date().getTime() / 1000 + "", 10),
-              id: chunk.id || "",
-              model: chunk.model || "",
-              object: "chat.completion.chunk",
-              system_fingerprint: "fp_a49d71b8a1",
-              usage: {
-                completion_tokens: chunk.usage?.output_tokens || 0,
-                prompt_tokens: chunk.usage?.input_tokens || 0,
-                total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
-              },
-            };
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
-            );
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
+              );
+            } else if (chunk.type === "message_delta") {
+              // 处理消息结束
+              const res = {
+                choices: [
+                  {
+                    delta: {},
+                    finish_reason: chunk.delta?.stop_reason || "stop",
+                    index: 0,
+                    logprobs: null,
+                  },
+                ],
+                created: parseInt(new Date().getTime() / 1000 + "", 10),
+                id: chunk.id || "",
+                model: chunk.model || "",
+                object: "chat.completion.chunk",
+                system_fingerprint: "fp_a49d71b8a1",
+                usage: {
+                  completion_tokens: chunk.usage?.output_tokens || 0,
+                  prompt_tokens: chunk.usage?.input_tokens || 0,
+                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                },
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
+              );
+            } else if (chunk.type === "message_stop") {
+              // 发送结束标记
+              controller.enqueue(
+                encoder.encode(`data: [DONE]\n\n`)
+              );
+            } else {
+              // 处理其他格式的响应（保持原有逻辑作为后备）
+              const res = {
+                choices: [
+                  {
+                    delta: {
+                      role: "assistant",
+                      content: chunk.content?.[0]?.text || '',
+                    },
+                    finish_reason: chunk.stop_reason?.toLowerCase() || null,
+                    index: 0,
+                    logprobs: null,
+                  },
+                ],
+                created: parseInt(new Date().getTime() / 1000 + "", 10),
+                id: chunk.id || "",
+                model: chunk.model || "",
+                object: "chat.completion.chunk",
+                system_fingerprint: "fp_a49d71b8a1",
+                usage: {
+                  completion_tokens: chunk.usage?.output_tokens || 0,
+                  prompt_tokens: chunk.usage?.input_tokens || 0,
+                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                },
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
+              );
+            }
           } catch (error: any) {
             log(`Error parsing ${providerName} stream chunk`, chunkStr, error.message);
           }
