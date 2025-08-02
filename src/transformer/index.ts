@@ -15,7 +15,7 @@ import { MaxCompletionTokens } from "./maxcompletiontokens.transformer";
 
 export default {
   AnthropicTransformer,
-  AnthropicPassthroughTransformer,
+
   GeminiTransformer,
   VertexGeminiTransformer,
   DeepseekTransformer,

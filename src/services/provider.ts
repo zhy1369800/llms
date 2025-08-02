@@ -52,7 +52,11 @@ export class ProviderService {
                     }
                   }
                   if (typeof transformer === 'string') {
-                    return this.transformerService.getTransformer(transformer);
+                    const transformerInstance = this.transformerService.getTransformer(transformer);
+                    if (typeof transformerInstance === 'function') {
+                      return new transformerInstance();
+                    }
+                    return transformerInstance;
                   }
                 }).filter((transformer) => typeof transformer !== 'undefined');
               }
@@ -67,6 +71,10 @@ export class ProviderService {
                       }
                     }
                     if (typeof transformer === 'string') {
+                      const transformerInstance = this.transformerService.getTransformer(transformer);
+                      if (typeof transformerInstance === 'function') {
+                        return new transformerInstance();
+                      }
                       return this.transformerService.getTransformer(transformer);
                     }
                   }).filter((transformer) => typeof transformer !== 'undefined')

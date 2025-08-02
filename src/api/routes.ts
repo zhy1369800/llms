@@ -99,10 +99,6 @@ async function processRequestTransformers(
   if (!bypass && provider.transformer?.use?.length) {
     !bypass && log('use transformers:', provider.transformer?.use);
     for (const providerTransformer of provider.transformer.use) {
-      // 跳过特定转换器（如anthropicPassthrough）
-      if (shouldSkipTransformer(providerTransformer)) {
-        continue;
-      }
       if (
         !providerTransformer ||
         typeof providerTransformer.transformRequestIn !== "function"
@@ -152,17 +148,6 @@ function shouldBypassTransformers(provider: any, transformer: any, body: any): b
     (!provider.transformer?.[body.model]?.use.length ||
       (provider.transformer?.[body.model]?.use.length === 1 &&
         provider.transformer?.[body.model]?.use[0].name === transformer.name))
-  );
-}
-
-/**
- * 判断是否应该跳过特定的转换器
- * 目前用于跳过已经执行过的AnthropicPassthroughTransformer
- */
-function shouldSkipTransformer(providerTransformer: any): boolean {
-  return (
-    providerTransformer &&
-    providerTransformer.name === 'anthropicPassthrough'
   );
 }
 

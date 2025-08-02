@@ -1,10 +1,14 @@
-import { MessageContent, TextContent, UnifiedChatRequest } from "@/types/llm";
-import { Transformer } from "../types/transformer";
+import { UnifiedChatRequest } from "@/types/llm";
+import {Transformer, TransformerOptions} from "../types/transformer";
 import { log } from "../utils/log";
 import { v4 as uuidv4 } from "uuid";
 
 export class OpenrouterTransformer implements Transformer {
-  name = "openrouter";
+  static TransformerName = "openrouter";
+
+  constructor(private readonly options?: TransformerOptions) {
+  }
+
 
   async transformRequestIn(
     request: UnifiedChatRequest
@@ -41,6 +45,7 @@ export class OpenrouterTransformer implements Transformer {
         }
       });
     }
+    Object.assign(request, this.options || {});
     return request;
   }
 
