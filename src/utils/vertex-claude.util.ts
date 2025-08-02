@@ -72,26 +72,21 @@ export function buildRequestBody(request: UnifiedChatRequest): VertexClaudeReque
     const isLastMessage = i === request.messages.length - 1;
     const isAssistantMessage = message.role === 'assistant';
     
-    // 跳过空的非最后一条消息
-    if (!isLastMessage && !message.content && !message.tool_calls) {
-      continue;
-    }
-    
     const content: ClaudeMessage['content'] = [];
     
     if (typeof message.content === 'string') {
-      if (message.content.trim()) {
-        content.push({
-          type: 'text',
-          text: message.content
-        });
-      }
+      // 保留所有字符串内容，即使是空字符串，因为可能包含重要信息
+      content.push({
+        type: 'text',
+        text: message.content
+      });
     } else if (Array.isArray(message.content)) {
       message.content.forEach((item) => {
-        if (item.type === 'text' && item.text?.trim()) {
+        if (item.type === 'text') {
+          // 保留所有文本内容，即使是空字符串
           content.push({
             type: 'text',
-            text: item.text
+            text: item.text || ''
           });
         } else if (item.type === 'image_url') {
           // 处理图片内容
@@ -107,13 +102,8 @@ export function buildRequestBody(request: UnifiedChatRequest): VertexClaudeReque
       });
     }
     
-    // 对于非最后一条消息，如果没有内容且没有工具调用，则跳过
-    if (!isLastMessage && content.length === 0 && !message.tool_calls) {
-      continue;
-    }
-    
-    // 对于非最后一条 assistant 消息，如果没有内容但有工具调用，则跳过
-    if (!isLastMessage && isAssistantMessage && content.length === 0 && message.tool_calls) {
+    // 只跳过完全空的非最后一条消息（没有内容和工具调用）
+    if (!isLastMessage && content.length === 0 && !message.tool_calls && !message.content) {
       continue;
     }
     
