@@ -13,10 +13,11 @@ import { ReasoningTransformer } from "./reasoning.transformer";
 import { SamplingTransformer } from "./sampling.transformer";
 import { MaxCompletionTokens } from "./maxcompletiontokens.transformer";
 import { VertexClaudeTransformer } from "./vertex-claude.transformer";
+import { CerebrasTransformer } from "./cerebras.transformer";
 
 export default {
   AnthropicTransformer,
-
+  
   GeminiTransformer,
   VertexGeminiTransformer,
   VertexClaudeTransformer,
@@ -29,5 +30,6 @@ export default {
   EnhanceToolTransformer,
   ReasoningTransformer,
   SamplingTransformer,
-  MaxCompletionTokens
+  MaxCompletionTokens,
+  CerebrasTransformer
 };
