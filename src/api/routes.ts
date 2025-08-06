@@ -4,10 +4,7 @@ import {
   FastifyRequest,
   FastifyReply,
 } from "fastify";
-import {
-  RegisterProviderRequest,
-  LLMProvider,
-} from "@/types/llm";
+import { RegisterProviderRequest, LLMProvider } from "@/types/llm";
 import { sendUnifiedRequest } from "@/utils/request";
 import { createApiError } from "./middleware";
 import { log } from "../utils/log";
@@ -40,7 +37,8 @@ async function handleTransformerEndpoint(
   const { requestBody, config, bypass } = await processRequestTransformers(
     body,
     provider,
-    transformer
+    transformer,
+    req.headers
   );
 
   // 发送请求到LLM提供者
@@ -55,6 +53,7 @@ async function handleTransformerEndpoint(
 
   // 处理响应转换器链
   const finalResponse = await processResponseTransformers(
+    requestBody,
     response,
     provider,
     transformer,
@@ -73,7 +72,8 @@ async function handleTransformerEndpoint(
 async function processRequestTransformers(
   body: any,
   provider: any,
-  transformer: any
+  transformer: any,
+  headers: any
 ) {
   let requestBody = body;
   let config = {};
@@ -82,11 +82,13 @@ async function processRequestTransformers(
   // 检查是否应该跳过转换器（透传参数）
   bypass = shouldBypassTransformers(provider, transformer, body);
 
+  if (bypass) {
+    config.headers = headers;
+  }
+
   // 执行transformer的transformRequestOut方法
   if (!bypass && typeof transformer.transformRequestOut === "function") {
-    const transformOut = await transformer.transformRequestOut(
-      requestBody
-    );
+    const transformOut = await transformer.transformRequestOut(requestBody);
     if (transformOut.body) {
       requestBody = transformOut.body;
       config = transformOut.config || {};
@@ -97,7 +99,7 @@ async function processRequestTransformers(
 
   // 执行provider级别的转换器
   if (!bypass && provider.transformer?.use?.length) {
-    !bypass && log('use transformers:', provider.transformer?.use);
+    !bypass && log("use transformers:", provider.transformer?.use);
     for (const providerTransformer of provider.transformer.use) {
       if (
         !providerTransformer ||
@@ -141,7 +143,11 @@ async function processRequestTransformers(
  * 判断是否应该跳过转换器（透传参数）
  * 当provider只使用一个transformer且该transformer与当前transformer相同时，跳过其他转换器
  */
-function shouldBypassTransformers(provider: any, transformer: any, body: any): boolean {
+function shouldBypassTransformers(
+  provider: any,
+  transformer: any,
+  body: any
+): boolean {
   return (
     provider.transformer?.use?.length === 1 &&
     provider.transformer.use[0].name === transformer.name &&
@@ -205,6 +211,7 @@ async function sendRequestToProvider(
  * 依次执行provider transformers、model-specific transformers、transformer的transformResponseIn
  */
 async function processResponseTransformers(
+  requestBody: any,
   response: any,
   provider: any,
   transformer: any,
@@ -228,8 +235,9 @@ async function processResponseTransformers(
   }
 
   // 执行模型特定的响应转换器
-  if (!bypass && provider.transformer?.[response.body?.model]?.use?.length) {
-    for (const modelTransformer of provider.transformer[response.body?.model].use) {
+  if (!bypass && provider.transformer?.[requestBody.model]?.use?.length) {
+    for (const modelTransformer of provider.transformer[requestBody.model]
+      .use) {
       if (
         !modelTransformer ||
         typeof modelTransformer.transformResponseOut !== "function"
@@ -244,9 +252,7 @@ async function processResponseTransformers(
 
   // 执行transformer的transformResponseIn方法
   if (!bypass && transformer.transformResponseIn) {
-    finalResponse = await transformer.transformResponseIn(
-      finalResponse,
-    );
+    finalResponse = await transformer.transformResponseIn(finalResponse);
   }
 
   return finalResponse;
@@ -486,8 +492,9 @@ export const registerApiRoutes: FastifyPluginAsync = async (
         throw createApiError("Provider not found", 404, "provider_not_found");
       }
       return {
-        message: `Provider ${request.body.enabled ? "enabled" : "disabled"
-          } successfully`,
+        message: `Provider ${
+          request.body.enabled ? "enabled" : "disabled"
+        } successfully`,
       };
     }
   );

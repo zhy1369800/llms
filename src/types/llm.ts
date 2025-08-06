@@ -81,6 +81,8 @@ export interface UnifiedTool {
   };
 }
 
+export type ThinkLevel = "none" | "low" | "medium" | "high";
+
 // 统一的请求接口
 export interface UnifiedChatRequest {
   messages: UnifiedMessage[];
@@ -89,7 +91,21 @@ export interface UnifiedChatRequest {
   temperature?: number;
   stream?: boolean;
   tools?: UnifiedTool[];
-  tool_choice?: "auto" | "none" | string;
+  tool_choice?:
+    | "auto"
+    | "none"
+    | "required"
+    | string
+    | { type: "function"; function: { name: string };
+  reasoning?: {
+    // OpenAI-style
+    effort?: ThinkLevel;
+
+    // Anthropic-style
+    max_tokens?: number;
+
+    enabled?: boolean;
+  };
 }
 
 // 统一的响应接口

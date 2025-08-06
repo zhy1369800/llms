@@ -75,7 +75,7 @@ export class ProviderService {
                       if (typeof transformerInstance === 'function') {
                         return new transformerInstance();
                       }
-                      return this.transformerService.getTransformer(transformer);
+                      return transformerInstance;
                     }
                   }).filter((transformer) => typeof transformer !== 'undefined')
                 }

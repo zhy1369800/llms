@@ -1,9 +1,38 @@
-import { Transformer } from "../types/transformer";
+import { UnifiedChatRequest } from "@/types/llm";
+import { Transformer, TransformerOptions } from "../types/transformer";
+import { log } from "@/utils/log";
 
 export class ReasoningTransformer implements Transformer {
-  name = "reasoning";
+  static TransformerName = "reasoning";
+  enable: any;
+
+  constructor(private readonly options?: TransformerOptions) {
+    this.enable = this.options?.enable ?? true;
+  }
+
+  async transformRequestIn(
+    request: UnifiedChatRequest
+  ): Promise<UnifiedChatRequest> {
+    if (!this.enable) {
+      request.thinking = {
+        type: "disabled",
+        budget_tokens: -1,
+      };
+      request.enable_thinking = false;
+      return request;
+    }
+    if (request.reasoning) {
+      request.thinking = {
+        type: "enabled",
+        budget_tokens: request.reasoning.max_tokens,
+      };
+      request.enable_thinking = true;
+    }
+    return request;
+  }
 
   async transformResponseOut(response: Response): Promise<Response> {
+    if (!this.enable) return response;
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse = await response.json();
       // Handle non-streaming response if needed
@@ -55,10 +84,9 @@ export class ReasoningTransformer implements Transformer {
           ) => {
             const { controller, encoder } = context;
 
-            if (
-              line.startsWith("data: ") &&
-              line.trim() !== "data: [DONE]"
-            ) {
+            log("Processing reason line:", line);
+
+            if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               try {
                 const data = JSON.parse(line.slice(6));
 
@@ -91,7 +119,8 @@ export class ReasoningTransformer implements Transformer {
 
                 // Check if reasoning is complete (when delta has content but no reasoning_content)
                 if (
-                    (data.choices?.[0]?.delta?.content || data.choices?.[0]?.delta?.tool_calls) &&
+                  (data.choices?.[0]?.delta?.content ||
+                    data.choices?.[0]?.delta?.tool_calls) &&
                   context.reasoningContent() &&
                   !context.isReasoningComplete()
                 ) {

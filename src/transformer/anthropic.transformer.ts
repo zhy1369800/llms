@@ -1,8 +1,14 @@
 import { ChatCompletion } from "openai/resources";
-import {LLMProvider, UnifiedChatRequest, UnifiedMessage, UnifiedTool} from "@/types/llm";
+import {
+  LLMProvider,
+  UnifiedChatRequest,
+  UnifiedMessage,
+  UnifiedTool,
+} from "@/types/llm";
 import { Transformer, TransformerContext } from "@/types/transformer";
 import { log } from "@/utils/log";
 import { v4 as uuidv4 } from "uuid";
+import { getThinkLevel } from "@/utils/thinking";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
@@ -13,26 +19,17 @@ export class AnthropicTransformer implements Transformer {
       body: request,
       config: {
         headers: {
-          'x-api-key': provider.apiKey
-        }
-      }
-    }
+          "x-api-key": provider.apiKey,
+          "Authorization": undefined,
+        },
+      },
+    };
   }
 
   async transformRequestOut(
     request: Record<string, any>
   ): Promise<UnifiedChatRequest> {
     log("Anthropic Request:", JSON.stringify(request, null, 2));
-
-    // 检测直通模式（仅检测 passthrough 字段）
-    if (request.passthrough === true) {
-      log("AnthropicTransformer: Detected passthrough mode, returning original request");
-      // 移除 passthrough 标记，添加内部标记
-      const { passthrough, ...cleanRequest } = request;
-      return {
-        ...cleanRequest,
-      } as unknown as UnifiedChatRequest;
-    }
     const messages: UnifiedMessage[] = [];
 
     if (request.system) {
@@ -160,10 +157,30 @@ export class AnthropicTransformer implements Transformer {
         : undefined,
       tool_choice: request.tool_choice,
     };
+    if (request.thinking) {
+      result.reasoning = {
+        effort: getThinkLevel(request.thinking.budget_tokens),
+        max_tokens: request.thinking.budget_tokens,
+        enabled: request.thinking.type === "enabled",
+      };
+    }
+    if (request.tool_choice) {
+      if (request.tool_choice.type === "tool") {
+        result.tool_choice = {
+          type: "function",
+          function: { name: request.tool_choice.name },
+        };
+      } else {
+        result.tool_choice = request.tool_choice.type;
+      }
+    }
     return result;
   }
 
-  async transformResponseIn(response: Response, context?: TransformerContext): Promise<Response> {
+  async transformResponseIn(
+    response: Response,
+    context?: TransformerContext
+  ): Promise<Response> {
     const isStream = response.headers
       .get("Content-Type")
       ?.includes("text/event-stream");
@@ -822,12 +839,12 @@ export class AnthropicTransformer implements Transformer {
         choice.finish_reason === "stop"
           ? "end_turn"
           : choice.finish_reason === "length"
-            ? "max_tokens"
-            : choice.finish_reason === "tool_calls"
-              ? "tool_use"
-              : choice.finish_reason === "content_filter"
-                ? "stop_sequence"
-                : "end_turn",
+          ? "max_tokens"
+          : choice.finish_reason === "tool_calls"
+          ? "tool_use"
+          : choice.finish_reason === "content_filter"
+          ? "stop_sequence"
+          : "end_turn",
       stop_sequence: null,
       usage: {
         input_tokens: openaiResponse.usage?.prompt_tokens || 0,
