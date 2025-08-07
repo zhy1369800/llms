@@ -16,6 +16,10 @@ export function cleanupParameters(obj: any) {
   delete obj.additionalProperties;
   delete obj.const;
 
+  if (obj.enum && obj.type !== "string") {
+    delete obj.enum;
+  }
+
   if (
     obj.type === "string" &&
     obj.format &&
