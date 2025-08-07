@@ -29,7 +29,9 @@ export function cleanupParameters(obj: any) {
   });
 }
 
-export function buildRequestBody(request: UnifiedChatRequest): Record<string, any> {
+export function buildRequestBody(
+  request: UnifiedChatRequest
+): Record<string, any> {
   const tools = [];
   const functionDeclarations = request.tools
     ?.filter((tool) => tool.function.name !== "web_search")
@@ -45,14 +47,16 @@ export function buildRequestBody(request: UnifiedChatRequest): Record<string, an
     });
   if (functionDeclarations?.length) {
     tools.push({
-      functionDeclarations
-    })
+      functionDeclarations,
+    });
   }
-  const webSearch = request.tools?.find((tool) => tool.function.name === "web_search")
+  const webSearch = request.tools?.find(
+    (tool) => tool.function.name === "web_search"
+  );
   if (webSearch) {
     tools.push({
       googleSearch: {},
-    })
+    });
   }
 
   const contents = request.messages.map((message: UnifiedMessage) => {
@@ -119,21 +123,41 @@ export function buildRequestBody(request: UnifiedChatRequest): Record<string, an
     };
   });
 
-  return {
+  const body = {
     contents,
     tools: tools.length ? tools : undefined,
   };
+
+  if (request.tool_choice) {
+    const toolConfig = {
+      functionCallingConfig: {}
+    };
+    if (request.tool_choice === "auto") {
+      toolConfig.functionCallingConfig.mode = 'auto';
+    } else if (request.tool_choice === "none") {
+      toolConfig.functionCallingConfig.mode = 'none';
+    } else if (request.tool_choice === "required")  {
+      toolConfig.functionCallingConfig.mode = 'any';
+    } else if(request.tool_choice?.function?.name) {
+      toolConfig.functionCallingConfig.mode = 'any';
+      toolConfig.functionCallingConfig.allowedFunctionNames = [request.tool_choice?.function?.name]
+    }
+    body.toolConfig = toolConfig;
+  }
+
+  return body;
 }
 
-export function transformRequestOut(request: Record<string, any>): UnifiedChatRequest {
+export function transformRequestOut(
+  request: Record<string, any>
+): UnifiedChatRequest {
   const contents: ContentListUnion = request.contents;
   const tools: ToolListUnion = request.tools;
   const model: string = request.model;
   const max_tokens: number | undefined = request.max_tokens;
   const temperature: number | undefined = request.temperature;
   const stream: boolean | undefined = request.stream;
-  const tool_choice: "auto" | "none" | string | undefined =
-    request.tool_choice;
+  const tool_choice: "auto" | "none" | string | undefined = request.tool_choice;
 
   const unifiedChatRequest: UnifiedChatRequest = {
     messages: [],
@@ -199,21 +223,25 @@ export function transformRequestOut(request: Record<string, any>): UnifiedChatRe
   return unifiedChatRequest;
 }
 
-export async function transformResponseOut(response: Response, providerName: string): Promise<Response> {
+export async function transformResponseOut(
+  response: Response,
+  providerName: string
+): Promise<Response> {
   if (response.headers.get("Content-Type")?.includes("application/json")) {
     const jsonResponse: any = await response.json();
-    const tool_calls = jsonResponse.candidates[0].content?.parts
-      ?.filter((part: Part) => part.functionCall)
-      ?.map((part: Part) => ({
-        id:
-          part.functionCall?.id ||
-          `tool_${Math.random().toString(36).substring(2, 15)}`,
-        type: "function",
-        function: {
-          name: part.functionCall?.name,
-          arguments: JSON.stringify(part.functionCall?.args || {}),
-        },
-      })) || [];
+    const tool_calls =
+      jsonResponse.candidates[0].content?.parts
+        ?.filter((part: Part) => part.functionCall)
+        ?.map((part: Part) => ({
+          id:
+            part.functionCall?.id ||
+            `tool_${Math.random().toString(36).substring(2, 15)}`,
+          type: "function",
+          function: {
+            name: part.functionCall?.name,
+            arguments: JSON.stringify(part.functionCall?.args || {}),
+          },
+        })) || [];
     const res = {
       id: jsonResponse.responseId,
       choices: [
@@ -239,7 +267,8 @@ export async function transformResponseOut(response: Response, providerName: str
       usage: {
         completion_tokens: jsonResponse.usageMetadata.candidatesTokenCount,
         prompt_tokens: jsonResponse.usageMetadata.promptTokenCount,
-        cached_content_token_count: jsonResponse.usageMetadata.cachedContentTokenCount || null,
+        cached_content_token_count:
+          jsonResponse.usageMetadata.cachedContentTokenCount || null,
         total_tokens: jsonResponse.usageMetadata.totalTokenCount,
       },
     };
@@ -287,15 +316,12 @@ export async function transformResponseOut(response: Response, providerName: str
                       ?.filter((part: Part) => part.text)
                       ?.map((part: Part) => part.text)
                       ?.join("\n"),
-                    tool_calls:
-                      tool_calls.length > 0 ? tool_calls : undefined,
+                    tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
                   },
                   finish_reason:
                     chunk.candidates[0].finishReason?.toLowerCase() || null,
                   index:
-                    chunk.candidates[0].index || tool_calls.length > 0
-                      ? 1
-                      : 0,
+                    chunk.candidates[0].index || tool_calls.length > 0 ? 1 : 0,
                   logprobs: null,
                 },
               ],
@@ -307,7 +333,8 @@ export async function transformResponseOut(response: Response, providerName: str
               usage: {
                 completion_tokens: chunk.usageMetadata.candidatesTokenCount,
                 prompt_tokens: chunk.usageMetadata.promptTokenCount,
-                cached_content_token_count: chunk.usageMetadata.cachedContentTokenCount || null,
+                cached_content_token_count:
+                  chunk.usageMetadata.cachedContentTokenCount || null,
                 total_tokens: chunk.usageMetadata.totalTokenCount,
               },
             };
@@ -317,7 +344,10 @@ export async function transformResponseOut(response: Response, providerName: str
               res.choices[0].delta.annotations =
                 chunk.candidates[0].groundingMetadata.groundingChunks.map(
                   (groundingChunk, index) => {
-                    const support = chunk.candidates[0]?.groundingMetadata?.groundingSupports?.filter(item => item.groundingChunkIndices.includes(index))
+                    const support =
+                      chunk.candidates[0]?.groundingMetadata?.groundingSupports?.filter(
+                        (item) => item.groundingChunkIndices.includes(index)
+                      );
                     return {
                       type: "url_citation",
                       url_citation: {
@@ -335,7 +365,11 @@ export async function transformResponseOut(response: Response, providerName: str
               encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
             );
           } catch (error: any) {
-            log(`Error parsing ${providerName} stream chunk`, chunkStr, error.message);
+            log(
+              `Error parsing ${providerName} stream chunk`,
+              chunkStr,
+              error.message
+            );
           }
         }
       }

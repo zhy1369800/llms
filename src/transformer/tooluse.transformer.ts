@@ -13,7 +13,7 @@ Always prioritize completing the user's task effectively and efficiently by usin
     });
     if (request.tools?.length) {
       request.tool_choice = "required";
-      request.tools.unshift({
+      request.tools.push({
         type: "function",
         function: {
           name: "ExitTool",
@@ -43,8 +43,8 @@ Examples:
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse = await response.json();
       if (
-        jsonResponse?.choices[0]?.message.tool_calls?.length &&
-        jsonResponse?.choices[0]?.message.tool_calls[0]?.function?.name ===
+        jsonResponse?.choices?.[0]?.message.tool_calls?.length &&
+        jsonResponse?.choices?.[0]?.message.tool_calls[0]?.function?.name ===
           "ExitTool"
       ) {
         const toolCall = jsonResponse?.choices[0]?.message.tool_calls[0];

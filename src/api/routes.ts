@@ -176,7 +176,20 @@ async function sendRequestToProvider(
     const auth = await transformer.auth(requestBody, provider);
     if (auth.body) {
       requestBody = auth.body;
-      config = { ...config, ...auth.config };
+      let headers = config.headers || {};
+      if (auth.config?.headers) {
+        headers = {
+          ...headers,
+          host: undefined,
+          ...auth.config.headers,
+        };
+        delete auth.config.headers;
+      }
+      config = {
+        ...config,
+        ...auth.config,
+        headers,
+      };
     } else {
       requestBody = auth;
     }
@@ -221,7 +234,9 @@ async function processResponseTransformers(
 
   // 执行provider级别的响应转换器
   if (!bypass && provider.transformer?.use?.length) {
-    for (const providerTransformer of provider.transformer.use) {
+    for (const providerTransformer of Array.from(
+      provider.transformer.use
+    ).reverse()) {
       if (
         !providerTransformer ||
         typeof providerTransformer.transformResponseOut !== "function"
@@ -236,8 +251,9 @@ async function processResponseTransformers(
 
   // 执行模型特定的响应转换器
   if (!bypass && provider.transformer?.[requestBody.model]?.use?.length) {
-    for (const modelTransformer of provider.transformer[requestBody.model]
-      .use) {
+    for (const modelTransformer of Array.from(
+      provider.transformer[requestBody.model].use
+    ).reverse()) {
       if (
         !modelTransformer ||
         typeof modelTransformer.transformResponseOut !== "function"
