@@ -1,5 +1,4 @@
 import { Transformer } from "@/types/transformer";
-import { log } from "@/utils/log";
 import { parseToolArguments } from "@/utils/toolArgumentsParser";
 
 export class EnhanceToolTransformer implements Transformer {
@@ -13,7 +12,8 @@ export class EnhanceToolTransformer implements Transformer {
         for (const toolCall of jsonResponse.choices[0].message.tool_calls) {
           if (toolCall.function?.arguments) {
             toolCall.function.arguments = parseToolArguments(
-              toolCall.function.arguments
+              toolCall.function.arguments,
+              this.logger
             );
           }
         }
@@ -71,9 +71,9 @@ export class EnhanceToolTransformer implements Transformer {
           ) => {
             let finalArgs = "";
             try {
-              finalArgs = parseToolArguments(currentToolCall.arguments || "");
+              finalArgs = parseToolArguments(currentToolCall.arguments || "", this.logger);
             } catch (e: any) {
-              log(
+              console.error(
                 `${e.message} ${
                   e.stack
                 }  工具调用参数解析失败: ${JSON.stringify(

@@ -1,4 +1,3 @@
-import { log } from "../utils/log";
 import { LLMProvider, UnifiedChatRequest } from "../types/llm";
 import { Transformer } from "../types/transformer";
 import {
@@ -19,7 +18,7 @@ async function getAccessToken(): Promise<string> {
     const accessToken = await client.getAccessToken();
     return accessToken.token || '';
   } catch (error) {
-    log('Error getting access token:', error);
+    console.error('Error getting access token:', error);
     throw new Error('Failed to get access token for Vertex AI. Please ensure you have set up authentication using one of these methods:\n' +
       '1. Set GOOGLE_APPLICATION_CREDENTIALS to point to service account key file\n' +
       '2. Run "gcloud auth application-default login"\n' +
@@ -29,8 +28,6 @@ async function getAccessToken(): Promise<string> {
 
 export class VertexGeminiTransformer implements Transformer {
   name = "vertex-gemini";
-
-  endPoint = "/v1/projects/:projectId/locations/:location/publishers/google/models/:modelAndAction";
 
   async transformRequestIn(
     request: UnifiedChatRequest,
@@ -48,7 +45,7 @@ export class VertexGeminiTransformer implements Transformer {
           projectId = credentials.project_id;
         }
       } catch (error) {
-        log('Error extracting project_id from GOOGLE_APPLICATION_CREDENTIALS:', error);
+        console.error('Error extracting project_id from GOOGLE_APPLICATION_CREDENTIALS:', error);
       }
     }
 

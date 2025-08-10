@@ -35,6 +35,6 @@ export class GeminiTransformer implements Transformer {
   transformRequestOut = transformRequestOut;
 
   async transformResponseOut(response: Response): Promise<Response> {
-    return transformResponseOut(response, this.name);
+    return transformResponseOut(response, this.name, this.logger);
   }
 }

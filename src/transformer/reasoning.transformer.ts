@@ -1,6 +1,5 @@
 import { UnifiedChatRequest } from "@/types/llm";
 import { Transformer, TransformerOptions } from "../types/transformer";
-import { log } from "@/utils/log";
 
 export class ReasoningTransformer implements Transformer {
   static TransformerName = "reasoning";
@@ -84,7 +83,7 @@ export class ReasoningTransformer implements Transformer {
           ) => {
             const { controller, encoder } = context;
 
-            log("Processing reason line:", line);
+            this.logger?.debug(`Processing reason line: ${line}`);
 
             if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               try {

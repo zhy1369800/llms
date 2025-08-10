@@ -1,4 +1,3 @@
-import { log } from "./log";
 import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "../types/llm";
 
 // Vertex Claude消息接口
@@ -223,7 +222,7 @@ export function transformRequestOut(request: Record<string, any>): UnifiedChatRe
   return result;
 }
 
-export async function transformResponseOut(response: Response, providerName: string): Promise<Response> {
+export async function transformResponseOut(response: Response, providerName: string, logger?: any): Promise<Response> {
   if (response.headers.get("Content-Type")?.includes("application/json")) {
     const jsonResponse = await response.json() as VertexClaudeResponse;
     
@@ -285,7 +284,7 @@ export async function transformResponseOut(response: Response, providerName: str
       if (line.startsWith("data: ")) {
         const chunkStr = line.slice(6).trim();
         if (chunkStr) {
-          log(`${providerName} chunk:`, chunkStr);
+          logger?.debug(`${providerName} chunk:`, chunkStr);
           try {
             const chunk = JSON.parse(chunkStr);
             
@@ -451,7 +450,7 @@ export async function transformResponseOut(response: Response, providerName: str
               );
             }
           } catch (error: any) {
-            log(`Error parsing ${providerName} stream chunk`, chunkStr, error.message);
+            logger?.error(`Error parsing ${providerName} stream chunk`, chunkStr, error.message);
           }
         }
       }

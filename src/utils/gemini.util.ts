@@ -1,4 +1,3 @@
-import { log } from "./log";
 import { UnifiedChatRequest, UnifiedMessage } from "../types/llm";
 import { Content, ContentListUnion, Part, ToolListUnion } from "@google/genai";
 
@@ -12,9 +11,36 @@ export function cleanupParameters(obj: any) {
     return;
   }
 
-  delete obj.$schema;
-  delete obj.additionalProperties;
-  delete obj.const;
+  const validFields = new Set([
+    "type",
+    "format",
+    "title",
+    "description",
+    "nullable",
+    "enum",
+    "maxItems",
+    "minItems",
+    "properties",
+    "required",
+    "minProperties",
+    "maxProperties",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "example",
+    "anyOf",
+    "propertyOrdering",
+    "default",
+    "items",
+    "minimum",
+    "maximum",
+  ]);
+
+  Object.keys(obj).forEach((key) => {
+    if (!validFields.has(key)) {
+      delete obj[key];
+    }
+  });
 
   if (obj.enum && obj.type !== "string") {
     delete obj.enum;
@@ -134,17 +160,19 @@ export function buildRequestBody(
 
   if (request.tool_choice) {
     const toolConfig = {
-      functionCallingConfig: {}
+      functionCallingConfig: {},
     };
     if (request.tool_choice === "auto") {
-      toolConfig.functionCallingConfig.mode = 'auto';
+      toolConfig.functionCallingConfig.mode = "auto";
     } else if (request.tool_choice === "none") {
-      toolConfig.functionCallingConfig.mode = 'none';
-    } else if (request.tool_choice === "required")  {
-      toolConfig.functionCallingConfig.mode = 'any';
-    } else if(request.tool_choice?.function?.name) {
-      toolConfig.functionCallingConfig.mode = 'any';
-      toolConfig.functionCallingConfig.allowedFunctionNames = [request.tool_choice?.function?.name]
+      toolConfig.functionCallingConfig.mode = "none";
+    } else if (request.tool_choice === "required") {
+      toolConfig.functionCallingConfig.mode = "any";
+    } else if (request.tool_choice?.function?.name) {
+      toolConfig.functionCallingConfig.mode = "any";
+      toolConfig.functionCallingConfig.allowedFunctionNames = [
+        request.tool_choice?.function?.name,
+      ];
     }
     body.toolConfig = toolConfig;
   }
@@ -229,7 +257,8 @@ export function transformRequestOut(
 
 export async function transformResponseOut(
   response: Response,
-  providerName: string
+  providerName: string,
+  logger?: any
 ): Promise<Response> {
   if (response.headers.get("Content-Type")?.includes("application/json")) {
     const jsonResponse: any = await response.json();
@@ -296,7 +325,7 @@ export async function transformResponseOut(
       if (line.startsWith("data: ")) {
         const chunkStr = line.slice(6).trim();
         if (chunkStr) {
-          log(`${providerName} chunk:`, chunkStr);
+          logger?.debug(`${providerName} chunk:`, chunkStr);
           try {
             const chunk = JSON.parse(chunkStr);
             const tool_calls = chunk.candidates[0].content?.parts
@@ -369,7 +398,7 @@ export async function transformResponseOut(
               encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
             );
           } catch (error: any) {
-            log(
+            logger?.error(
               `Error parsing ${providerName} stream chunk`,
               chunkStr,
               error.message

@@ -6,7 +6,6 @@ import {
   RequestRouteInfo,
   ConfigProvider,
 } from "../types/llm";
-import { log } from "../utils/log";
 import { ConfigService } from "./config";
 import { TransformerService } from "./transformer";
 
@@ -14,7 +13,7 @@ export class ProviderService {
   private providers: Map<string, LLMProvider> = new Map();
   private modelRoutes: Map<string, ModelRoute> = new Map();
 
-  constructor(private readonly configService: ConfigService, private readonly transformerService: TransformerService) {
+  constructor(private readonly configService: ConfigService, private readonly transformerService: TransformerService, private readonly logger: any) {
     this.initializeCustomProviders();
   }
 
@@ -92,9 +91,9 @@ export class ProviderService {
           transformer: providerConfig.transformer ? transformer : undefined,
         });
 
-        log(`${providerConfig.name} provider registered`);
+        this.logger.info(`${providerConfig.name} provider registered`);
       } catch (error) {
-        log(`${providerConfig.name} provider registered error: ${error}`);
+        this.logger.error(`${providerConfig.name} provider registered error: ${error}`);
       }
     });
   }

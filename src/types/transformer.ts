@@ -36,4 +36,7 @@ export type Transformer = {
   endPoint?: string;
   name?: string;
   auth?: (request: any, provider: LLMProvider) => Promise<any>;
+  
+  // Logger for transformer
+  logger?: any;
 };

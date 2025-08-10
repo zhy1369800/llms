@@ -1,11 +1,11 @@
 import { ProxyAgent } from "undici";
 import { UnifiedChatRequest } from "../types/llm";
-import { log } from "./log";
 
 export function sendUnifiedRequest(
   url: URL | string,
   request: UnifiedChatRequest,
-  config: any
+  config: any,
+  logger?: any
 ): Promise<Response> {
   const headers = new Headers({
     "Content-Type": "application/json",
@@ -40,6 +40,6 @@ export function sendUnifiedRequest(
       new URL(config.httpsProxy).toString()
     );
   }
-  log("final request:", typeof url === "string" ? url : url.toString(), config.httpsProxy,  fetchOptions);
+  logger?.debug(`final request: ${typeof url === "string" ? url : url.toString()} ${config.httpsProxy ? `Use Proxy: ${config.httpsProxy}` : ''}\n${JSON.stringify(Array.from(headers.entries()))}\n${JSON.stringify(fetchOptions)}`);
   return fetch(typeof url === "string" ? url : url.toString(), fetchOptions);
 }

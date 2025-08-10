@@ -7,7 +7,6 @@ import {
 import { RegisterProviderRequest, LLMProvider } from "@/types/llm";
 import { sendUnifiedRequest } from "@/utils/request";
 import { createApiError } from "./middleware";
-import { log } from "../utils/log";
 import { version } from "../../package.json";
 
 /**
@@ -99,7 +98,6 @@ async function processRequestTransformers(
 
   // 执行provider级别的转换器
   if (!bypass && provider.transformer?.use?.length) {
-    !bypass && log("use transformers:", provider.transformer?.use);
     for (const providerTransformer of provider.transformer.use) {
       if (
         !providerTransformer ||
@@ -196,21 +194,25 @@ async function sendRequestToProvider(
   }
 
   // 发送HTTP请求
-  const response = await sendUnifiedRequest(url, requestBody, {
-    httpsProxy: fastify._server!.configService.getHttpsProxy(),
-    ...config,
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      ...(config?.headers || {}),
+  const response = await sendUnifiedRequest(
+    url,
+    requestBody,
+    {
+      httpsProxy: fastify._server!.configService.getHttpsProxy(),
+      ...config,
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        ...(config?.headers || {}),
+      },
     },
-  });
+    fastify.log
+  );
 
   // 处理请求错误
   if (!response.ok) {
     const errorText = await response.text();
-    log(`Error response from ${url}: ${errorText}`);
     throw createApiError(
-      `Error from provider: ${errorText}`,
+      `Error from provider(${response.status}): ${errorText}`,
       response.status,
       "provider_response_error"
     );
@@ -285,7 +287,9 @@ function formatResponse(response: any, reply: FastifyReply, body: any) {
   }
 
   // 处理流式响应
-  const isStream = body?.stream === true;
+  const isStream = response.headers
+      .get("Content-Type")
+      ?.includes("text/event-stream");
   if (isStream) {
     reply.header("Content-Type", "text/event-stream");
     reply.header("Cache-Control", "no-cache");

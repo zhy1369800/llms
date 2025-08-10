@@ -33,7 +33,6 @@ function convertContentToString(content: any): string {
  */
 export class CerebrasTransformer implements Transformer {
   name = "cerebras";
-  endPoint = "/v1/chat/completions";
 
   /**
    * Transform the request from Claude Code format to Cerebras format

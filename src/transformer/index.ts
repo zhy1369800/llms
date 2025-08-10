@@ -1,5 +1,4 @@
 import { AnthropicTransformer } from "./anthropic.transformer";
-import { AnthropicPassthroughTransformer } from "./anthropicPassthrough.transformer";
 import { GeminiTransformer } from "./gemini.transformer";
 import { VertexGeminiTransformer } from "./vertex-gemini.transformer";
 import { DeepseekTransformer } from "./deepseek.transformer";
@@ -14,6 +13,7 @@ import { SamplingTransformer } from "./sampling.transformer";
 import { MaxCompletionTokens } from "./maxcompletiontokens.transformer";
 import { VertexClaudeTransformer } from "./vertex-claude.transformer";
 import { CerebrasTransformer } from "./cerebras.transformer";
+import { StreamOptionsTransformer } from "./streamoptions.transformer";
 
 export default {
   AnthropicTransformer,
@@ -30,5 +30,6 @@ export default {
   ReasoningTransformer,
   SamplingTransformer,
   MaxCompletionTokens,
-  CerebrasTransformer
+  CerebrasTransformer,
+  StreamOptionsTransformer
 };

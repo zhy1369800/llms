@@ -6,7 +6,6 @@ import {
   UnifiedTool,
 } from "@/types/llm";
 import { Transformer, TransformerContext } from "@/types/transformer";
-import { log } from "@/utils/log";
 import { v4 as uuidv4 } from "uuid";
 import { getThinkLevel } from "@/utils/thinking";
 
@@ -20,7 +19,7 @@ export class AnthropicTransformer implements Transformer {
       config: {
         headers: {
           "x-api-key": provider.apiKey,
-          "Authorization": undefined,
+          Authorization: undefined,
         },
       },
     };
@@ -29,7 +28,6 @@ export class AnthropicTransformer implements Transformer {
   async transformRequestOut(
     request: Record<string, any>
   ): Promise<UnifiedChatRequest> {
-    log("Anthropic Request:", JSON.stringify(request, null, 2));
     const messages: UnifiedMessage[] = [];
 
     if (request.system) {
@@ -160,7 +158,7 @@ export class AnthropicTransformer implements Transformer {
     if (request.thinking) {
       result.reasoning = {
         effort: getThinkLevel(request.thinking.budget_tokens),
-        max_tokens: request.thinking.budget_tokens,
+        // max_tokens: request.thinking.budget_tokens,
         enabled: request.thinking.type === "enabled",
       };
     }
@@ -221,8 +219,9 @@ export class AnthropicTransformer implements Transformer {
   private async convertOpenAIStreamToAnthropic(
     openaiStream: ReadableStream
   ): Promise<ReadableStream> {
+
     const readable = new ReadableStream({
-      async start(controller) {
+      start: async (controller) => {
         const encoder = new TextEncoder();
         const messageId = `msg_${Date.now()}`;
         let model = "unknown";
@@ -242,8 +241,8 @@ export class AnthropicTransformer implements Transformer {
           if (!isClosed) {
             try {
               controller.enqueue(data);
-              const dataStr = new TextDecoder().decode(data);
-              log("send data:", dataStr.trim());
+              // const dataStr = new TextDecoder().decode(data);
+              // this.logger.debug(`send data: ${dataStr}`);
             } catch (error) {
               if (
                 error instanceof TypeError &&
@@ -251,7 +250,7 @@ export class AnthropicTransformer implements Transformer {
               ) {
                 isClosed = true;
               } else {
-                log(`send data error: ${error.message}`);
+                this.logger.debug(`send data error: ${error.message}`);
                 throw error;
               }
             }
@@ -300,6 +299,8 @@ export class AnthropicTransformer implements Transformer {
 
               if (!line.startsWith("data: ")) continue;
               const data = line.slice(6);
+              this.logger.debug(`recieved data: ${data}`);
+
               if (data === "[DONE]") {
                 continue;
               }
@@ -307,7 +308,9 @@ export class AnthropicTransformer implements Transformer {
               try {
                 const chunk = JSON.parse(data);
                 totalChunks++;
-                log(`Original Response:`, JSON.stringify(chunk, null, 2));
+                this.logger.debug(
+                  `Original Response:\n${JSON.stringify(chunk, null, 2)}`
+                );
                 if (chunk.error) {
                   const errorMessage = {
                     type: "error",
@@ -339,8 +342,7 @@ export class AnthropicTransformer implements Transformer {
                       content: [],
                       model: model,
                       stop_reason: null,
-                      stop_sequence: null,
-                      usage: { input_tokens: 1, output_tokens: 1 },
+                      stop_sequence: null
                     },
                   };
 
@@ -349,7 +351,7 @@ export class AnthropicTransformer implements Transformer {
                       `event: message_start\ndata: ${JSON.stringify(
                         messageStart
                       )}\n\n`
-                    )
+                    ),
                   );
                 }
 
@@ -539,7 +541,6 @@ export class AnthropicTransformer implements Transformer {
                         ? toolCallIndexToContentBlockIndex.size + 1
                         : toolCallIndexToContentBlockIndex.size;
                       if (newContentBlockIndex !== 0) {
-                        log("content_block_stop2");
                         const contentBlockStop = {
                           type: "content_block_stop",
                           index: contentIndex,
@@ -673,7 +674,6 @@ export class AnthropicTransformer implements Transformer {
                     (hasTextContentStarted || toolCallChunks > 0) &&
                     !isClosed
                   ) {
-                    log("content_block_stop hasTextContentStarted");
                     const contentBlockStop = {
                       type: "content_block_stop",
                       index: contentIndex,
@@ -734,7 +734,7 @@ export class AnthropicTransformer implements Transformer {
                   break;
                 }
               } catch (parseError: any) {
-                log(
+                this.logger?.error(
                   `parseError: ${parseError.name} message: ${parseError.message} stack: ${parseError.stack} data: ${data}`
                 );
               }
@@ -759,8 +759,8 @@ export class AnthropicTransformer implements Transformer {
           }
         }
       },
-      cancel(reason) {
-        log("cancle stream:", reason);
+      cancel: (reason) => {
+        this.logger.debug(`cancle stream: ${reason}`);
       },
     });
 
@@ -770,7 +770,9 @@ export class AnthropicTransformer implements Transformer {
   private convertOpenAIResponseToAnthropic(
     openaiResponse: ChatCompletion
   ): any {
-    log("Original OpenAI response:", JSON.stringify(openaiResponse, null, 2));
+    this.logger.debug(
+      `Original OpenAI response: \n${JSON.stringify(openaiResponse, null, 2)}`
+    );
 
     const choice = openaiResponse.choices[0];
     if (!choice) {
@@ -851,9 +853,12 @@ export class AnthropicTransformer implements Transformer {
         output_tokens: openaiResponse.usage?.completion_tokens || 0,
       },
     };
-    log(
-      "Conversion complete, final Anthropic response:",
-      JSON.stringify(result, null, 2)
+    this.logger.debug(
+      `Conversion complete, final Anthropic response:\n${JSON.stringify(
+        result,
+        null,
+        2
+      )}`
     );
     return result;
   }

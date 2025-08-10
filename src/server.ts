@@ -20,15 +20,17 @@ import Fastify, {
   onReadyHookHandler,
   onListenHookHandler,
   onCloseHookHandler,
+  FastifyBaseLogger,
+  FastifyLoggerOptions,
 } from "fastify";
 import cors from "@fastify/cors";
 import { ConfigService, AppConfig } from "./services/config";
-import { log } from "./utils/log";
 import { errorHandler } from "./api/middleware";
 import { registerApiRoutes } from "./api/routes";
 import { LLMService } from "./services/llm";
 import { ProviderService } from "./services/provider";
 import { TransformerService } from "./services/transformer";
+import { PinoLoggerOptions } from "fastify/types/logger";
 
 // Extend FastifyRequest to include custom properties
 declare module "fastify" {
@@ -42,12 +44,14 @@ declare module "fastify" {
 
 interface ServerOptions {
   initialConfig?: AppConfig;
+  logger?: boolean | PinoLoggerOptions;
 }
 
 // Application factory
-function createApp(): FastifyInstance {
+function createApp(logger: boolean | PinoLoggerOptions): FastifyInstance {
   const fastify = Fastify({
     bodyLimit: 50 * 1024 * 1024,
+    logger,
   });
 
   // Register error handler
@@ -67,16 +71,20 @@ class Server {
   transformerService: TransformerService;
 
   constructor(options: ServerOptions = {}) {
+    this.app = createApp(options.logger ?? true);
     this.configService = new ConfigService(options);
-    this.transformerService = new TransformerService(this.configService);
+    this.transformerService = new TransformerService(
+      this.configService,
+      this.app.log
+    );
     this.transformerService.initialize().finally(() => {
       this.providerService = new ProviderService(
         this.configService,
-        this.transformerService
+        this.transformerService,
+        this.app.log
       );
       this.llmService = new LLMService(this.providerService);
     });
-    this.app = createApp();
   }
 
   // Type-safe register method using Fastify native types
@@ -116,6 +124,13 @@ class Server {
     try {
       this.app._server = this;
 
+      this.app.addHook("preHandler", (request, reply, done) => {
+        if (request.body) {
+          request.log.info({ body: request.body }, "request body");
+        }
+        done();
+      });
+
       this.app.addHook(
         "preHandler",
         async (req: FastifyRequest, reply: FastifyReply) => {
@@ -145,10 +160,10 @@ class Server {
         host: this.configService.get("HOST") || "127.0.0.1",
       });
 
-      log(`🚀 LLMs API server listening on ${address}`);
+      this.app.log.info(`🚀 LLMs API server listening on ${address}`);
 
       const shutdown = async (signal: string) => {
-        log(`Received ${signal}, shutting down gracefully...`);
+        this.app.log.info(`Received ${signal}, shutting down gracefully...`);
         await this.app.close();
         process.exit(0);
       };
@@ -156,7 +171,7 @@ class Server {
       process.on("SIGINT", () => shutdown("SIGINT"));
       process.on("SIGTERM", () => shutdown("SIGTERM"));
     } catch (error) {
-      log(`Error starting server: ${error}`);
+      this.app.log.error(`Error starting server: ${error}`);
       process.exit(1);
     }
   }
