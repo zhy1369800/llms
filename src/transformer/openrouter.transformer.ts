@@ -1,13 +1,11 @@
 import { UnifiedChatRequest } from "@/types/llm";
-import {Transformer, TransformerOptions} from "../types/transformer";
+import { Transformer, TransformerOptions } from "../types/transformer";
 import { v4 as uuidv4 } from "uuid";
 
 export class OpenrouterTransformer implements Transformer {
   static TransformerName = "openrouter";
 
-  constructor(private readonly options?: TransformerOptions) {
-  }
-
+  constructor(private readonly options?: TransformerOptions) {}
 
   async transformRequestIn(
     request: UnifiedChatRequest
@@ -106,7 +104,10 @@ export class OpenrouterTransformer implements Transformer {
               try {
                 const data = JSON.parse(jsonStr);
                 if (data.usage) {
-                  this.logger?.debug("usage", data.usage, hasToolCall);
+                  this.logger?.debug(
+                    { usage: data.usage, hasToolCall },
+                    "usage"
+                  );
                   data.choices[0].finish_reason = hasToolCall
                     ? "tool_calls"
                     : "stop";
@@ -210,7 +211,6 @@ export class OpenrouterTransformer implements Transformer {
                   data.choices?.[0]?.delta?.tool_calls?.length &&
                   !hasToolCall
                 ) {
-                  this.logger?.debug("hasToolCall", true);
                   hasToolCall = true;
                 }
 

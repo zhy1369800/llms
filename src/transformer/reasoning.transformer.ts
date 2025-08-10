@@ -83,7 +83,7 @@ export class ReasoningTransformer implements Transformer {
           ) => {
             const { controller, encoder } = context;
 
-            this.logger?.debug(`Processing reason line: ${line}`);
+            this.logger?.debug({ line }, `Processing reason line`);
 
             if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               try {

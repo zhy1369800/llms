@@ -1,13 +1,15 @@
 import { UnifiedChatRequest, UnifiedMessage } from "../types/llm";
 import { Content, ContentListUnion, Part, ToolListUnion } from "@google/genai";
 
-export function cleanupParameters(obj: any) {
+export function cleanupParameters(obj: any, keyName?: string): void {
   if (!obj || typeof obj !== "object") {
     return;
   }
 
   if (Array.isArray(obj)) {
-    obj.forEach(cleanupParameters);
+    obj.forEach((item) => {
+      cleanupParameters(item);
+    });
     return;
   }
 
@@ -36,11 +38,13 @@ export function cleanupParameters(obj: any) {
     "maximum",
   ]);
 
-  Object.keys(obj).forEach((key) => {
-    if (!validFields.has(key)) {
-      delete obj[key];
-    }
-  });
+  if (keyName !== "properties") {
+    Object.keys(obj).forEach((key) => {
+      if (!validFields.has(key)) {
+        delete obj[key];
+      }
+    });
+  }
 
   if (obj.enum && obj.type !== "string") {
     delete obj.enum;
@@ -55,7 +59,7 @@ export function cleanupParameters(obj: any) {
   }
 
   Object.keys(obj).forEach((key) => {
-    cleanupParameters(obj[key]);
+    cleanupParameters(obj[key], key);
   });
 }
 
@@ -285,10 +289,11 @@ export async function transformResponseOut(
             )?.toLowerCase() || null,
           index: 0,
           message: {
-            content: jsonResponse.candidates[0].content?.parts
-              ?.filter((part: Part) => part.text)
-              ?.map((part: Part) => part.text)
-              ?.join("\n") || "",
+            content:
+              jsonResponse.candidates[0].content?.parts
+                ?.filter((part: Part) => part.text)
+                ?.map((part: Part) => part.text)
+                ?.join("\n") || "",
             role: "assistant",
             tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
           },
@@ -325,19 +330,19 @@ export async function transformResponseOut(
       if (line.startsWith("data: ")) {
         const chunkStr = line.slice(6).trim();
         if (chunkStr) {
-          logger?.debug(`${providerName} chunk:`, chunkStr);
+          logger?.debug({ chunkStr }, `${providerName} chunk:`);
           try {
             const chunk = JSON.parse(chunkStr);
-            
+
             // Check if chunk has valid structure
             if (!chunk.candidates || !chunk.candidates[0]) {
               log(`Invalid chunk structure:`, chunkStr);
               return;
             }
-            
+
             const candidate = chunk.candidates[0];
             const parts = candidate.content?.parts || [];
-            
+
             const tool_calls = parts
               .filter((part: Part) => part.functionCall)
               .map((part: Part) => ({
@@ -350,12 +355,12 @@ export async function transformResponseOut(
                   arguments: JSON.stringify(part.functionCall?.args || {}),
                 },
               }));
-              
+
             const textContent = parts
               .filter((part: Part) => part.text)
               .map((part: Part) => part.text)
               .join("\n");
-            
+
             const res = {
               choices: [
                 {
@@ -375,16 +380,15 @@ export async function transformResponseOut(
               object: "chat.completion.chunk",
               system_fingerprint: "fp_a49d71b8a1",
               usage: {
-                completion_tokens: chunk.usageMetadata?.candidatesTokenCount || 0,
+                completion_tokens:
+                  chunk.usageMetadata?.candidatesTokenCount || 0,
                 prompt_tokens: chunk.usageMetadata?.promptTokenCount || 0,
                 cached_content_token_count:
                   chunk.usageMetadata?.cachedContentTokenCount || null,
                 total_tokens: chunk.usageMetadata?.totalTokenCount || 0,
               },
             };
-            if (
-              candidate?.groundingMetadata?.groundingChunks?.length
-            ) {
+            if (candidate?.groundingMetadata?.groundingChunks?.length) {
               res.choices[0].delta.annotations =
                 candidate.groundingMetadata.groundingChunks.map(
                   (groundingChunk, index) => {

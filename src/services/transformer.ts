@@ -148,7 +148,7 @@ export class TransformerService {
         }
       );
     } catch (error) {
-      this.logger.error("transformer regist error:", error);
+      this.logger.error({ error }, "transformer regist error:");
     }
   }
 

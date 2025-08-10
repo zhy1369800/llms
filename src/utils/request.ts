@@ -40,6 +40,13 @@ export function sendUnifiedRequest(
       new URL(config.httpsProxy).toString()
     );
   }
-  logger?.debug(`final request: ${typeof url === "string" ? url : url.toString()} ${config.httpsProxy ? `Use Proxy: ${config.httpsProxy}` : ''}\n${JSON.stringify(Array.from(headers.entries()))}\n${JSON.stringify(fetchOptions)}`);
+  logger?.debug(
+    {
+      request: fetchOptions,
+      requestUrl: typeof url === "string" ? url : url.toString(),
+      useProxy: config.httpsProxy,
+    },
+    "final request"
+  );
   return fetch(typeof url === "string" ? url : url.toString(), fetchOptions);
 }

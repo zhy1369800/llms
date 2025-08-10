@@ -2,12 +2,12 @@ import { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from "../types/llm";
 
 // Vertex Claude消息接口
 interface ClaudeMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: Array<{
-    type: 'text' | 'image';
+    type: "text" | "image";
     text?: string;
     source?: {
-      type: 'base64';
+      type: "base64";
       media_type: string;
       data: string;
     };
@@ -29,7 +29,7 @@ interface ClaudeTool {
 
 // Vertex Claude请求接口
 interface VertexClaudeRequest {
-  anthropic_version: 'vertex-2023-10-16';
+  anthropic_version: "vertex-2023-10-16";
   messages: ClaudeMessage[];
   max_tokens: number;
   stream?: boolean;
@@ -37,21 +37,21 @@ interface VertexClaudeRequest {
   top_p?: number;
   top_k?: number;
   tools?: ClaudeTool[];
-  tool_choice?: 'auto' | 'none' | { type: 'tool'; name: string };
+  tool_choice?: "auto" | "none" | { type: "tool"; name: string };
 }
 
 // Vertex Claude响应接口
 interface VertexClaudeResponse {
   content: Array<{
-    type: 'text';
+    type: "text";
     text: string;
   }>;
   id: string;
   model: string;
-  role: 'assistant';
+  role: "assistant";
   stop_reason: string;
   stop_sequence: null;
-  type: 'message';
+  type: "message";
   usage: {
     input_tokens: number;
     output_tokens: number;
@@ -63,65 +63,77 @@ interface VertexClaudeResponse {
   }>;
 }
 
-export function buildRequestBody(request: UnifiedChatRequest): VertexClaudeRequest {
+export function buildRequestBody(
+  request: UnifiedChatRequest
+): VertexClaudeRequest {
   const messages: ClaudeMessage[] = [];
-  
+
   for (let i = 0; i < request.messages.length; i++) {
     const message = request.messages[i];
     const isLastMessage = i === request.messages.length - 1;
-    const isAssistantMessage = message.role === 'assistant';
-    
-    const content: ClaudeMessage['content'] = [];
-    
-    if (typeof message.content === 'string') {
+    const isAssistantMessage = message.role === "assistant";
+
+    const content: ClaudeMessage["content"] = [];
+
+    if (typeof message.content === "string") {
       // 保留所有字符串内容，即使是空字符串，因为可能包含重要信息
       content.push({
-        type: 'text',
-        text: message.content
+        type: "text",
+        text: message.content,
       });
     } else if (Array.isArray(message.content)) {
       message.content.forEach((item) => {
-        if (item.type === 'text') {
+        if (item.type === "text") {
           // 保留所有文本内容，即使是空字符串
           content.push({
-            type: 'text',
-            text: item.text || ''
+            type: "text",
+            text: item.text || "",
           });
-        } else if (item.type === 'image_url') {
+        } else if (item.type === "image_url") {
           // 处理图片内容
           content.push({
-            type: 'image',
+            type: "image",
             source: {
-              type: 'base64',
-              media_type: item.media_type || 'image/jpeg',
-              data: item.image_url.url
-            }
+              type: "base64",
+              media_type: item.media_type || "image/jpeg",
+              data: item.image_url.url,
+            },
           });
         }
       });
     }
-    
+
     // 只跳过完全空的非最后一条消息（没有内容和工具调用）
-    if (!isLastMessage && content.length === 0 && !message.tool_calls && !message.content) {
+    if (
+      !isLastMessage &&
+      content.length === 0 &&
+      !message.tool_calls &&
+      !message.content
+    ) {
       continue;
     }
-    
+
     // 对于最后一条 assistant 消息，如果没有内容但有工具调用，则添加空内容
-    if (isLastMessage && isAssistantMessage && content.length === 0 && message.tool_calls) {
+    if (
+      isLastMessage &&
+      isAssistantMessage &&
+      content.length === 0 &&
+      message.tool_calls
+    ) {
       content.push({
-        type: 'text',
-        text: ''
+        type: "text",
+        text: "",
       });
     }
 
     messages.push({
-      role: message.role === 'assistant' ? 'assistant' : 'user',
-      content
+      role: message.role === "assistant" ? "assistant" : "user",
+      content,
     });
   }
 
   const requestBody: VertexClaudeRequest = {
-    anthropic_version: 'vertex-2023-10-16',
+    anthropic_version: "vertex-2023-10-16",
     messages,
     max_tokens: request.max_tokens || 1000,
     stream: request.stream || false,
@@ -133,19 +145,19 @@ export function buildRequestBody(request: UnifiedChatRequest): VertexClaudeReque
     requestBody.tools = request.tools.map((tool: UnifiedTool) => ({
       name: tool.function.name,
       description: tool.function.description,
-      input_schema: tool.function.parameters
+      input_schema: tool.function.parameters,
     }));
   }
 
   // 处理工具选择
   if (request.tool_choice) {
-    if (request.tool_choice === 'auto' || request.tool_choice === 'none') {
+    if (request.tool_choice === "auto" || request.tool_choice === "none") {
       requestBody.tool_choice = request.tool_choice;
-    } else if (typeof request.tool_choice === 'string') {
+    } else if (typeof request.tool_choice === "string") {
       // 如果 tool_choice 是字符串，假设是工具名称
       requestBody.tool_choice = {
-        type: 'tool',
-        name: request.tool_choice
+        type: "tool",
+        name: request.tool_choice,
       };
     }
   }
@@ -153,40 +165,42 @@ export function buildRequestBody(request: UnifiedChatRequest): VertexClaudeReque
   return requestBody;
 }
 
-export function transformRequestOut(request: Record<string, any>): UnifiedChatRequest {
+export function transformRequestOut(
+  request: Record<string, any>
+): UnifiedChatRequest {
   const vertexRequest = request as VertexClaudeRequest;
-  
+
   const messages: UnifiedMessage[] = vertexRequest.messages.map((msg) => {
     const content = msg.content.map((item) => {
-      if (item.type === 'text') {
+      if (item.type === "text") {
         return {
-          type: 'text' as const,
-          text: item.text || ''
+          type: "text" as const,
+          text: item.text || "",
         };
-      } else if (item.type === 'image' && item.source) {
+      } else if (item.type === "image" && item.source) {
         return {
-          type: 'image_url' as const,
+          type: "image_url" as const,
           image_url: {
-            url: item.source.data
+            url: item.source.data,
           },
-          media_type: item.source.media_type
+          media_type: item.source.media_type,
         };
       }
       return {
-        type: 'text' as const,
-        text: ''
+        type: "text" as const,
+        text: "",
       };
     });
 
     return {
       role: msg.role,
-      content
+      content,
     };
   });
 
   const result: UnifiedChatRequest = {
     messages,
-    model: request.model || 'claude-sonnet-4@20250514',
+    model: request.model || "claude-sonnet-4@20250514",
     max_tokens: vertexRequest.max_tokens,
     temperature: vertexRequest.temperature,
     stream: vertexRequest.stream,
@@ -195,26 +209,26 @@ export function transformRequestOut(request: Record<string, any>): UnifiedChatRe
   // 处理工具定义
   if (vertexRequest.tools && vertexRequest.tools.length > 0) {
     result.tools = vertexRequest.tools.map((tool) => ({
-      type: 'function' as const,
+      type: "function" as const,
       function: {
         name: tool.name,
         description: tool.description,
         parameters: {
-          type: 'object' as const,
+          type: "object" as const,
           properties: tool.input_schema.properties,
           required: tool.input_schema.required,
           additionalProperties: tool.input_schema.additionalProperties,
-          $schema: tool.input_schema.$schema
-        }
-      }
+          $schema: tool.input_schema.$schema,
+        },
+      },
     }));
   }
 
   // 处理工具选择
   if (vertexRequest.tool_choice) {
-    if (typeof vertexRequest.tool_choice === 'string') {
+    if (typeof vertexRequest.tool_choice === "string") {
       result.tool_choice = vertexRequest.tool_choice;
-    } else if (vertexRequest.tool_choice.type === 'tool') {
+    } else if (vertexRequest.tool_choice.type === "tool") {
       result.tool_choice = vertexRequest.tool_choice.name;
     }
   }
@@ -222,23 +236,27 @@ export function transformRequestOut(request: Record<string, any>): UnifiedChatRe
   return result;
 }
 
-export async function transformResponseOut(response: Response, providerName: string, logger?: any): Promise<Response> {
+export async function transformResponseOut(
+  response: Response,
+  providerName: string,
+  logger?: any
+): Promise<Response> {
   if (response.headers.get("Content-Type")?.includes("application/json")) {
-    const jsonResponse = await response.json() as VertexClaudeResponse;
-    
+    const jsonResponse = (await response.json()) as VertexClaudeResponse;
+
     // 处理工具调用
     let tool_calls = undefined;
     if (jsonResponse.tool_use && jsonResponse.tool_use.length > 0) {
       tool_calls = jsonResponse.tool_use.map((tool) => ({
         id: tool.id,
-        type: 'function' as const,
+        type: "function" as const,
         function: {
           name: tool.name,
-          arguments: JSON.stringify(tool.input)
-        }
+          arguments: JSON.stringify(tool.input),
+        },
       }));
     }
-    
+
     // 转换为OpenAI格式的响应
     const res = {
       id: jsonResponse.id,
@@ -247,9 +265,9 @@ export async function transformResponseOut(response: Response, providerName: str
           finish_reason: jsonResponse.stop_reason || null,
           index: 0,
           message: {
-            content: jsonResponse.content[0]?.text || '',
+            content: jsonResponse.content[0]?.text || "",
             role: "assistant",
-            ...(tool_calls && { tool_calls })
+            ...(tool_calls && { tool_calls }),
           },
         },
       ],
@@ -259,10 +277,11 @@ export async function transformResponseOut(response: Response, providerName: str
       usage: {
         completion_tokens: jsonResponse.usage.output_tokens,
         prompt_tokens: jsonResponse.usage.input_tokens,
-        total_tokens: jsonResponse.usage.input_tokens + jsonResponse.usage.output_tokens,
+        total_tokens:
+          jsonResponse.usage.input_tokens + jsonResponse.usage.output_tokens,
       },
     };
-    
+
     return new Response(JSON.stringify(res), {
       status: response.status,
       statusText: response.statusText,
@@ -284,19 +303,22 @@ export async function transformResponseOut(response: Response, providerName: str
       if (line.startsWith("data: ")) {
         const chunkStr = line.slice(6).trim();
         if (chunkStr) {
-          logger?.debug(`${providerName} chunk:`, chunkStr);
+          logger?.debug({ chunkStr }, `${providerName} chunk:`);
           try {
             const chunk = JSON.parse(chunkStr);
-            
+
             // 处理 Anthropic 原生格式的流式响应
-            if (chunk.type === "content_block_delta" && chunk.delta?.type === "text_delta") {
+            if (
+              chunk.type === "content_block_delta" &&
+              chunk.delta?.type === "text_delta"
+            ) {
               // 这是 Anthropic 原生格式，需要转换为 OpenAI 格式
               const res = {
                 choices: [
                   {
                     delta: {
                       role: "assistant",
-                      content: chunk.delta.text || '',
+                      content: chunk.delta.text || "",
                     },
                     finish_reason: null,
                     index: 0,
@@ -311,13 +333,18 @@ export async function transformResponseOut(response: Response, providerName: str
                 usage: {
                   completion_tokens: chunk.usage?.output_tokens || 0,
                   prompt_tokens: chunk.usage?.input_tokens || 0,
-                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                  total_tokens:
+                    (chunk.usage?.input_tokens || 0) +
+                    (chunk.usage?.output_tokens || 0),
                 },
               };
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
               );
-            } else if (chunk.type === "content_block_delta" && chunk.delta?.type === "input_json_delta") {
+            } else if (
+              chunk.type === "content_block_delta" &&
+              chunk.delta?.type === "input_json_delta"
+            ) {
               // 处理工具调用的参数增量
               const res = {
                 choices: [
@@ -327,10 +354,10 @@ export async function transformResponseOut(response: Response, providerName: str
                         {
                           index: chunk.index || 0,
                           function: {
-                            arguments: chunk.delta.partial_json || ''
-                          }
-                        }
-                      ]
+                            arguments: chunk.delta.partial_json || "",
+                          },
+                        },
+                      ],
                     },
                     finish_reason: null,
                     index: 0,
@@ -345,13 +372,18 @@ export async function transformResponseOut(response: Response, providerName: str
                 usage: {
                   completion_tokens: chunk.usage?.output_tokens || 0,
                   prompt_tokens: chunk.usage?.input_tokens || 0,
-                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                  total_tokens:
+                    (chunk.usage?.input_tokens || 0) +
+                    (chunk.usage?.output_tokens || 0),
                 },
               };
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(res)}\n\n`)
               );
-            } else if (chunk.type === "content_block_start" && chunk.content_block?.type === "tool_use") {
+            } else if (
+              chunk.type === "content_block_start" &&
+              chunk.content_block?.type === "tool_use"
+            ) {
               // 处理工具调用开始
               const res = {
                 choices: [
@@ -364,10 +396,10 @@ export async function transformResponseOut(response: Response, providerName: str
                           type: "function",
                           function: {
                             name: chunk.content_block.name,
-                            arguments: ""
-                          }
-                        }
-                      ]
+                            arguments: "",
+                          },
+                        },
+                      ],
                     },
                     finish_reason: null,
                     index: 0,
@@ -382,7 +414,9 @@ export async function transformResponseOut(response: Response, providerName: str
                 usage: {
                   completion_tokens: chunk.usage?.output_tokens || 0,
                   prompt_tokens: chunk.usage?.input_tokens || 0,
-                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                  total_tokens:
+                    (chunk.usage?.input_tokens || 0) +
+                    (chunk.usage?.output_tokens || 0),
                 },
               };
               controller.enqueue(
@@ -394,9 +428,14 @@ export async function transformResponseOut(response: Response, providerName: str
                 choices: [
                   {
                     delta: {},
-                    finish_reason: chunk.delta?.stop_reason === "tool_use" ? "tool_calls" : 
-                                   chunk.delta?.stop_reason === "max_tokens" ? "length" :
-                                   chunk.delta?.stop_reason === "stop_sequence" ? "content_filter" : "stop",
+                    finish_reason:
+                      chunk.delta?.stop_reason === "tool_use"
+                        ? "tool_calls"
+                        : chunk.delta?.stop_reason === "max_tokens"
+                        ? "length"
+                        : chunk.delta?.stop_reason === "stop_sequence"
+                        ? "content_filter"
+                        : "stop",
                     index: 0,
                     logprobs: null,
                   },
@@ -409,7 +448,9 @@ export async function transformResponseOut(response: Response, providerName: str
                 usage: {
                   completion_tokens: chunk.usage?.output_tokens || 0,
                   prompt_tokens: chunk.usage?.input_tokens || 0,
-                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                  total_tokens:
+                    (chunk.usage?.input_tokens || 0) +
+                    (chunk.usage?.output_tokens || 0),
                 },
               };
               controller.enqueue(
@@ -417,9 +458,7 @@ export async function transformResponseOut(response: Response, providerName: str
               );
             } else if (chunk.type === "message_stop") {
               // 发送结束标记
-              controller.enqueue(
-                encoder.encode(`data: [DONE]\n\n`)
-              );
+              controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
             } else {
               // 处理其他格式的响应（保持原有逻辑作为后备）
               const res = {
@@ -427,7 +466,7 @@ export async function transformResponseOut(response: Response, providerName: str
                   {
                     delta: {
                       role: "assistant",
-                      content: chunk.content?.[0]?.text || '',
+                      content: chunk.content?.[0]?.text || "",
                     },
                     finish_reason: chunk.stop_reason?.toLowerCase() || null,
                     index: 0,
@@ -442,7 +481,9 @@ export async function transformResponseOut(response: Response, providerName: str
                 usage: {
                   completion_tokens: chunk.usage?.output_tokens || 0,
                   prompt_tokens: chunk.usage?.input_tokens || 0,
-                  total_tokens: (chunk.usage?.input_tokens || 0) + (chunk.usage?.output_tokens || 0),
+                  total_tokens:
+                    (chunk.usage?.input_tokens || 0) +
+                    (chunk.usage?.output_tokens || 0),
                 },
               };
               controller.enqueue(
@@ -450,7 +491,11 @@ export async function transformResponseOut(response: Response, providerName: str
               );
             }
           } catch (error: any) {
-            logger?.error(`Error parsing ${providerName} stream chunk`, chunkStr, error.message);
+            logger?.error(
+              `Error parsing ${providerName} stream chunk`,
+              chunkStr,
+              error.message
+            );
           }
         }
       }
@@ -494,4 +539,4 @@ export async function transformResponseOut(response: Response, providerName: str
     });
   }
   return response;
-} 
+}

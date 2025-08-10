@@ -219,7 +219,6 @@ export class AnthropicTransformer implements Transformer {
   private async convertOpenAIStreamToAnthropic(
     openaiStream: ReadableStream
   ): Promise<ReadableStream> {
-
     const readable = new ReadableStream({
       start: async (controller) => {
         const encoder = new TextEncoder();
@@ -238,11 +237,13 @@ export class AnthropicTransformer implements Transformer {
         let contentIndex = 0;
 
         const safeEnqueue = (data: Uint8Array) => {
+          this.logger.debug({ isClosed }, `execute safeEnqueue`);
+
           if (!isClosed) {
             try {
               controller.enqueue(data);
-              // const dataStr = new TextDecoder().decode(data);
-              // this.logger.debug(`send data: ${dataStr}`);
+              const dataStr = new TextDecoder().decode(data);
+              this.logger.debug({ dataStr }, `send data`);
             } catch (error) {
               if (
                 error instanceof TypeError &&
@@ -308,9 +309,7 @@ export class AnthropicTransformer implements Transformer {
               try {
                 const chunk = JSON.parse(data);
                 totalChunks++;
-                this.logger.debug(
-                  `Original Response:\n${JSON.stringify(chunk, null, 2)}`
-                );
+                this.logger.debug({ response: chunk }, `Original Response`);
                 if (chunk.error) {
                   const errorMessage = {
                     type: "error",
@@ -342,7 +341,7 @@ export class AnthropicTransformer implements Transformer {
                       content: [],
                       model: model,
                       stop_reason: null,
-                      stop_sequence: null
+                      stop_sequence: null,
                     },
                   };
 
@@ -351,7 +350,7 @@ export class AnthropicTransformer implements Transformer {
                       `event: message_start\ndata: ${JSON.stringify(
                         messageStart
                       )}\n\n`
-                    ),
+                    )
                   );
                 }
 
@@ -771,7 +770,8 @@ export class AnthropicTransformer implements Transformer {
     openaiResponse: ChatCompletion
   ): any {
     this.logger.debug(
-      `Original OpenAI response: \n${JSON.stringify(openaiResponse, null, 2)}`
+      { response: openaiResponse },
+      `Original OpenAI response}`
     );
 
     const choice = openaiResponse.choices[0];
@@ -854,11 +854,8 @@ export class AnthropicTransformer implements Transformer {
       },
     };
     this.logger.debug(
-      `Conversion complete, final Anthropic response:\n${JSON.stringify(
-        result,
-        null,
-        2
-      )}`
+      { result },
+      `Conversion complete, final Anthropic response`
     );
     return result;
   }
