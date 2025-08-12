@@ -287,9 +287,7 @@ function formatResponse(response: any, reply: FastifyReply, body: any) {
   }
 
   // 处理流式响应
-  const isStream = response.headers
-      .get("Content-Type")
-      ?.includes("text/event-stream");
+  const isStream = body.stream === true;
   if (isStream) {
     reply.header("Content-Type", "text/event-stream");
     reply.header("Cache-Control", "no-cache");

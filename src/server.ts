@@ -127,6 +127,10 @@ class Server {
       this.app.addHook("preHandler", (request, reply, done) => {
         if (request.body) {
           request.log.info({ body: request.body }, "request body");
+          request.body.stream === true
+          if(!request.body.stream) {
+            request.body.stream = false; // Ensure stream is false if not set
+          }
         }
         done();
       });

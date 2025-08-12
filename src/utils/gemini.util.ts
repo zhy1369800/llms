@@ -63,6 +63,179 @@ export function cleanupParameters(obj: any, keyName?: string): void {
   });
 }
 
+// Type enum equivalent in JavaScript
+const Type = {
+  TYPE_UNSPECIFIED: "TYPE_UNSPECIFIED",
+  STRING: "STRING",
+  NUMBER: "NUMBER",
+  INTEGER: "INTEGER",
+  BOOLEAN: "BOOLEAN",
+  ARRAY: "ARRAY",
+  OBJECT: "OBJECT",
+  NULL: "NULL",
+};
+
+/**
+ * Transform the type field from an array of types to an array of anyOf fields.
+ * @param {string[]} typeList - List of types
+ * @param {Object} resultingSchema - The schema object to modify
+ */
+function flattenTypeArrayToAnyOf(typeList: Array<string>, resultingSchema: any): void {
+  if (typeList.includes("null")) {
+    resultingSchema["nullable"] = true;
+  }
+  const listWithoutNull = typeList.filter((type) => type !== "null");
+
+  if (listWithoutNull.length === 1) {
+    const upperCaseType = listWithoutNull[0].toUpperCase();
+    resultingSchema["type"] = Object.values(Type).includes(upperCaseType)
+      ? upperCaseType
+      : Type.TYPE_UNSPECIFIED;
+  } else {
+    resultingSchema["anyOf"] = [];
+    for (const i of listWithoutNull) {
+      const upperCaseType = i.toUpperCase();
+      resultingSchema["anyOf"].push({
+        type: Object.values(Type).includes(upperCaseType)
+          ? upperCaseType
+          : Type.TYPE_UNSPECIFIED,
+      });
+    }
+  }
+}
+
+/**
+ * Process a JSON schema to make it compatible with the GenAI API
+ * @param {Object} _jsonSchema - The JSON schema to process
+ * @returns {Object} - The processed schema
+ */
+function processJsonSchema(_jsonSchema: any): any {
+  const genAISchema = {};
+  const schemaFieldNames = ["items"];
+  const listSchemaFieldNames = ["anyOf"];
+  const dictSchemaFieldNames = ["properties"];
+
+  if (_jsonSchema["type"] && _jsonSchema["anyOf"]) {
+    throw new Error("type and anyOf cannot be both populated.");
+  }
+
+  /*
+  This is to handle the nullable array or object. The _jsonSchema will
+  be in the format of {anyOf: [{type: 'null'}, {type: 'object'}]}. The
+  logic is to check if anyOf has 2 elements and one of the element is null,
+  if so, the anyOf field is unnecessary, so we need to get rid of the anyOf
+  field and make the schema nullable. Then use the other element as the new
+  _jsonSchema for processing. This is because the backend doesn't have a null
+  type.
+  */
+  const incomingAnyOf = _jsonSchema["anyOf"];
+  if (
+    incomingAnyOf != null &&
+    Array.isArray(incomingAnyOf) &&
+    incomingAnyOf.length == 2
+  ) {
+    if (incomingAnyOf[0] && incomingAnyOf[0]["type"] === "null") {
+      genAISchema["nullable"] = true;
+      _jsonSchema = incomingAnyOf[1];
+    } else if (incomingAnyOf[1] && incomingAnyOf[1]["type"] === "null") {
+      genAISchema["nullable"] = true;
+      _jsonSchema = incomingAnyOf[0];
+    }
+  }
+
+  if (_jsonSchema["type"] && Array.isArray(_jsonSchema["type"])) {
+    flattenTypeArrayToAnyOf(_jsonSchema["type"], genAISchema);
+  }
+
+  for (const [fieldName, fieldValue] of Object.entries(_jsonSchema)) {
+    // Skip if the fieldValue is undefined or null.
+    if (fieldValue == null) {
+      continue;
+    }
+
+    if (fieldName == "type") {
+      if (fieldValue === "null") {
+        throw new Error(
+          "type: null can not be the only possible type for the field."
+        );
+      }
+      if (Array.isArray(fieldValue)) {
+        // we have already handled the type field with array of types in the
+        // beginning of this function.
+        continue;
+      }
+      const upperCaseValue = fieldValue.toUpperCase();
+      genAISchema["type"] = Object.values(Type).includes(upperCaseValue)
+        ? upperCaseValue
+        : Type.TYPE_UNSPECIFIED;
+    } else if (schemaFieldNames.includes(fieldName)) {
+      genAISchema[fieldName] = processJsonSchema(fieldValue);
+    } else if (listSchemaFieldNames.includes(fieldName)) {
+      const listSchemaFieldValue = [];
+      for (const item of fieldValue) {
+        if (item["type"] == "null") {
+          genAISchema["nullable"] = true;
+          continue;
+        }
+        listSchemaFieldValue.push(processJsonSchema(item));
+      }
+      genAISchema[fieldName] = listSchemaFieldValue;
+    } else if (dictSchemaFieldNames.includes(fieldName)) {
+      const dictSchemaFieldValue = {};
+      for (const [key, value] of Object.entries(fieldValue)) {
+        dictSchemaFieldValue[key] = processJsonSchema(value);
+      }
+      genAISchema[fieldName] = dictSchemaFieldValue;
+    } else {
+      // additionalProperties is not included in JSONSchema, skipping it.
+      if (fieldName === "additionalProperties") {
+        continue;
+      }
+      genAISchema[fieldName] = fieldValue;
+    }
+  }
+  return genAISchema;
+}
+
+/**
+ * Transform a tool object
+ * @param {Object} tool - The tool object to transform
+ * @returns {Object} - The transformed tool object
+ */
+export function tTool(tool: any): any {
+  if (tool.functionDeclarations) {
+    for (const functionDeclaration of tool.functionDeclarations) {
+      if (functionDeclaration.parameters) {
+        if (!Object.keys(functionDeclaration.parameters).includes("$schema")) {
+          functionDeclaration.parameters = processJsonSchema(
+            functionDeclaration.parameters
+          );
+        } else {
+          if (!functionDeclaration.parametersJsonSchema) {
+            functionDeclaration.parametersJsonSchema =
+              functionDeclaration.parameters;
+            delete functionDeclaration.parameters;
+          }
+        }
+      }
+      if (functionDeclaration.response) {
+        if (!Object.keys(functionDeclaration.response).includes("$schema")) {
+          functionDeclaration.response = processJsonSchema(
+            functionDeclaration.response
+          );
+        } else {
+          if (!functionDeclaration.responseJsonSchema) {
+            functionDeclaration.responseJsonSchema =
+              functionDeclaration.response;
+            delete functionDeclaration.response;
+          }
+        }
+      }
+    }
+  }
+  return tool;
+}
+
 export function buildRequestBody(
   request: UnifiedChatRequest
 ): Record<string, any> {
@@ -70,9 +243,6 @@ export function buildRequestBody(
   const functionDeclarations = request.tools
     ?.filter((tool) => tool.function.name !== "web_search")
     ?.map((tool) => {
-      if (tool.function.parameters) {
-        cleanupParameters(tool.function.parameters);
-      }
       return {
         name: tool.function.name,
         description: tool.function.description,
@@ -80,9 +250,11 @@ export function buildRequestBody(
       };
     });
   if (functionDeclarations?.length) {
-    tools.push({
-      functionDeclarations,
-    });
+    tools.push(
+      tTool({
+        functionDeclarations,
+      })
+    );
   }
   const webSearch = request.tools?.find(
     (tool) => tool.function.name === "web_search"

@@ -223,6 +223,7 @@ export class AnthropicTransformer implements Transformer {
       start: async (controller) => {
         const encoder = new TextEncoder();
         const messageId = `msg_${Date.now()}`;
+        let stopReasonMessageDelta: null | Record<string, any> = null;
         let model = "unknown";
         let hasStarted = false;
         let hasTextContentStarted = false;
@@ -261,6 +262,26 @@ export class AnthropicTransformer implements Transformer {
         const safeClose = () => {
           if (!isClosed) {
             try {
+              if (stopReasonMessageDelta) {
+                safeEnqueue(
+                  encoder.encode(
+                    `event: message_delta\ndata: ${JSON.stringify(
+                      stopReasonMessageDelta
+                    )}\n\n`
+                  )
+                );
+                stopReasonMessageDelta = null;
+              }
+              const messageStop = {
+                type: "message_stop",
+              };
+              safeEnqueue(
+                encoder.encode(
+                  `event: message_stop\ndata: ${JSON.stringify(
+                    messageStop
+                  )}\n\n`
+                )
+              );
               controller.close();
               isClosed = true;
             } catch (error) {
@@ -303,6 +324,16 @@ export class AnthropicTransformer implements Transformer {
               this.logger.debug(`recieved data: ${data}`);
 
               if (data === "[DONE]") {
+                if (stopReasonMessageDelta) {
+                  safeEnqueue(
+                    encoder.encode(
+                      `event: message_delta\ndata: ${JSON.stringify(
+                        stopReasonMessageDelta
+                      )}\n\n`
+                    )
+                  );
+                  stopReasonMessageDelta = null;
+                }
                 continue;
               }
 
@@ -342,6 +373,10 @@ export class AnthropicTransformer implements Transformer {
                       model: model,
                       stop_reason: null,
                       stop_sequence: null,
+                      usage: {
+                        input_tokens: 0,
+                        output_tokens: 0,
+                      },
                     },
                   };
 
@@ -355,6 +390,30 @@ export class AnthropicTransformer implements Transformer {
                 }
 
                 const choice = chunk.choices?.[0];
+                if (chunk.usage) {
+                  if (!stopReasonMessageDelta) {
+                    stopReasonMessageDelta = {
+                      type: "message_delta",
+                      delta: {
+                        stop_reason: "end_turn",
+                        stop_sequence: null,
+                      },
+                      usage: {
+                        input_tokens: chunk.usage?.prompt_tokens || 0,
+                        output_tokens: chunk.usage?.completion_tokens || 0,
+                        cache_read_input_tokens:
+                          chunk.usage?.cache_read_input_tokens || 0,
+                      },
+                    };
+                  } else {
+                    stopReasonMessageDelta.usage = {
+                      input_tokens: chunk.usage?.prompt_tokens || 0,
+                      output_tokens: chunk.usage?.completion_tokens || 0,
+                      cache_read_input_tokens:
+                        chunk.usage?.cache_read_input_tokens || 0,
+                    };
+                  }
+                }
                 if (!choice) {
                   continue;
                 }
@@ -662,7 +721,6 @@ export class AnthropicTransformer implements Transformer {
                 }
 
                 if (choice?.finish_reason && !isClosed && !hasFinished) {
-                  hasFinished = true;
                   if (contentChunks === 0 && toolCallChunks === 0) {
                     console.error(
                       "Warning: No content in the stream response!"
@@ -697,7 +755,7 @@ export class AnthropicTransformer implements Transformer {
                     const anthropicStopReason =
                       stopReasonMapping[choice.finish_reason] || "end_turn";
 
-                    const messageDelta = {
+                    stopReasonMessageDelta = {
                       type: "message_delta",
                       delta: {
                         stop_reason: anthropicStopReason,
@@ -706,28 +764,10 @@ export class AnthropicTransformer implements Transformer {
                       usage: {
                         input_tokens: chunk.usage?.prompt_tokens || 0,
                         output_tokens: chunk.usage?.completion_tokens || 0,
+                        cache_read_input_tokens:
+                          chunk.usage?.cache_read_input_tokens || 0,
                       },
                     };
-                    safeEnqueue(
-                      encoder.encode(
-                        `event: message_delta\ndata: ${JSON.stringify(
-                          messageDelta
-                        )}\n\n`
-                      )
-                    );
-                  }
-
-                  if (!isClosed) {
-                    const messageStop = {
-                      type: "message_stop",
-                    };
-                    safeEnqueue(
-                      encoder.encode(
-                        `event: message_stop\ndata: ${JSON.stringify(
-                          messageStop
-                        )}\n\n`
-                      )
-                    );
                   }
 
                   break;
@@ -769,10 +809,7 @@ export class AnthropicTransformer implements Transformer {
   private convertOpenAIResponseToAnthropic(
     openaiResponse: ChatCompletion
   ): any {
-    this.logger.debug(
-      { response: openaiResponse },
-      `Original OpenAI response}`
-    );
+    this.logger.debug({ response: openaiResponse }, `Original OpenAI response`);
 
     const choice = openaiResponse.choices[0];
     if (!choice) {
