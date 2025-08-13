@@ -271,6 +271,23 @@ export class AnthropicTransformer implements Transformer {
                   )
                 );
                 stopReasonMessageDelta = null;
+              } else {
+                safeEnqueue(
+                  encoder.encode(
+                    `event: message_delta\ndata: ${JSON.stringify({
+                      type: "message_delta",
+                      delta: {
+                        stop_reason: "end_turn",
+                        stop_sequence: null,
+                      },
+                      usage: {
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cache_read_input_tokens: 0,
+                      },
+                    })}\n\n`
+                  )
+                );
               }
               const messageStop = {
                 type: "message_stop",
