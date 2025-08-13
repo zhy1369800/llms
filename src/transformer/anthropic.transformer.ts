@@ -19,7 +19,7 @@ export class AnthropicTransformer implements Transformer {
       config: {
         headers: {
           "x-api-key": provider.apiKey,
-          Authorization: undefined,
+          authorization: undefined,
         },
       },
     };
