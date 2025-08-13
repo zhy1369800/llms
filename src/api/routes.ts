@@ -82,6 +82,11 @@ async function processRequestTransformers(
   bypass = shouldBypassTransformers(provider, transformer, body);
 
   if (bypass) {
+    if (headers instanceof Headers) {
+      headers.delete("content-length");
+    } else {
+      delete headers["content-length"];
+    }
     config.headers = headers;
   }
 
