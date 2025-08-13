@@ -183,9 +183,9 @@ async function sendRequestToProvider(
       if (auth.config?.headers) {
         headers = {
           ...headers,
-          host: undefined,
           ...auth.config.headers,
         };
+        delete headers.host;
         delete auth.config.headers;
       }
       config = {
