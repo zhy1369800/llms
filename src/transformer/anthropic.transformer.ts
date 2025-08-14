@@ -341,16 +341,6 @@ export class AnthropicTransformer implements Transformer {
               this.logger.debug(`recieved data: ${data}`);
 
               if (data === "[DONE]") {
-                if (stopReasonMessageDelta) {
-                  safeEnqueue(
-                    encoder.encode(
-                      `event: message_delta\ndata: ${JSON.stringify(
-                        stopReasonMessageDelta
-                      )}\n\n`
-                    )
-                  );
-                  stopReasonMessageDelta = null;
-                }
                 continue;
               }
 
