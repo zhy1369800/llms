@@ -236,9 +236,9 @@ export class AnthropicTransformer implements Transformer {
         let isClosed = false;
         let isThinkingStarted = false;
         let contentIndex = 0;
+        let currentContentBlockIndex = -1; // Track the current content block index
 
         const safeEnqueue = (data: Uint8Array) => {
-          this.logger.debug({ isClosed }, `execute safeEnqueue`);
 
           if (!isClosed) {
             try {
@@ -262,6 +262,22 @@ export class AnthropicTransformer implements Transformer {
         const safeClose = () => {
           if (!isClosed) {
             try {
+              // Close any remaining open content block
+              if (currentContentBlockIndex >= 0) {
+                const contentBlockStop = {
+                  type: "content_block_stop",
+                  index: currentContentBlockIndex,
+                };
+                safeEnqueue(
+                  encoder.encode(
+                    `event: content_block_stop\ndata: ${JSON.stringify(
+                      contentBlockStop
+                    )}\n\n`
+                  )
+                );
+                currentContentBlockIndex = -1;
+              }
+
               if (stopReasonMessageDelta) {
                 safeEnqueue(
                   encoder.encode(
@@ -426,6 +442,22 @@ export class AnthropicTransformer implements Transformer {
                 }
 
                 if (choice?.delta?.thinking && !isClosed && !hasFinished) {
+                  // Close any previous content block if open
+                  if (currentContentBlockIndex >= 0) {
+                    const contentBlockStop = {
+                      type: "content_block_stop",
+                      index: currentContentBlockIndex,
+                    };
+                    safeEnqueue(
+                      encoder.encode(
+                        `event: content_block_stop\ndata: ${JSON.stringify(
+                          contentBlockStop
+                        )}\n\n`
+                      )
+                    );
+                    currentContentBlockIndex = -1;
+                  }
+
                   if (!isThinkingStarted) {
                     const contentBlockStart = {
                       type: "content_block_start",
@@ -439,6 +471,7 @@ export class AnthropicTransformer implements Transformer {
                         )}\n\n`
                       )
                     );
+                    currentContentBlockIndex = contentIndex;
                     isThinkingStarted = true;
                   }
                   if (choice.delta.thinking.signature) {
@@ -468,6 +501,7 @@ export class AnthropicTransformer implements Transformer {
                         )}\n\n`
                       )
                     );
+                    currentContentBlockIndex = -1;
                     contentIndex++;
                   } else if (choice.delta.thinking.content) {
                     const thinkingChunk = {
@@ -491,6 +525,26 @@ export class AnthropicTransformer implements Transformer {
                 if (choice?.delta?.content && !isClosed && !hasFinished) {
                   contentChunks++;
 
+                  // Close any previous content block if open and it's not a text content block
+                  if (currentContentBlockIndex >= 0) {
+                    // Check if current content block is text type
+                    const isCurrentTextBlock = hasTextContentStarted;
+                    if (!isCurrentTextBlock) {
+                      const contentBlockStop = {
+                        type: "content_block_stop",
+                        index: currentContentBlockIndex,
+                      };
+                      safeEnqueue(
+                        encoder.encode(
+                          `event: content_block_stop\ndata: ${JSON.stringify(
+                            contentBlockStop
+                          )}\n\n`
+                        )
+                      );
+                      currentContentBlockIndex = -1;
+                    }
+                  }
+
                   if (!hasTextContentStarted && !hasFinished) {
                     hasTextContentStarted = true;
                     const contentBlockStart = {
@@ -508,12 +562,13 @@ export class AnthropicTransformer implements Transformer {
                         )}\n\n`
                       )
                     );
+                    currentContentBlockIndex = contentIndex;
                   }
 
                   if (!isClosed && !hasFinished) {
                     const anthropicChunk = {
                       type: "content_block_delta",
-                      index: contentIndex,
+                      index: currentContentBlockIndex, // Use current content block index
                       delta: {
                         type: "text_delta",
                         text: choice.delta.content,
@@ -534,20 +589,25 @@ export class AnthropicTransformer implements Transformer {
                   !isClosed &&
                   !hasFinished
                 ) {
-                  const contentBlockStop = {
-                    type: "content_block_stop",
-                    index: contentIndex,
-                  };
-                  safeEnqueue(
-                    encoder.encode(
-                      `event: content_block_stop\ndata: ${JSON.stringify(
-                        contentBlockStop
-                      )}\n\n`
-                    )
-                  );
-                  hasTextContentStarted = false;
+                  // Close text content block if open
+                  if (currentContentBlockIndex >= 0 && hasTextContentStarted) {
+                    const contentBlockStop = {
+                      type: "content_block_stop",
+                      index: currentContentBlockIndex,
+                    };
+                    safeEnqueue(
+                      encoder.encode(
+                        `event: content_block_stop\ndata: ${JSON.stringify(
+                          contentBlockStop
+                        )}\n\n`
+                      )
+                    );
+                    currentContentBlockIndex = -1;
+                    hasTextContentStarted = false;
+                  }
+
                   choice?.delta?.annotations.forEach(
-                    (annotation, annotationIndex, annotations) => {
+                    (annotation: any) => {
                       contentIndex++;
                       const contentBlockStart = {
                         type: "content_block_start",
@@ -583,6 +643,7 @@ export class AnthropicTransformer implements Transformer {
                           )}\n\n`
                         )
                       );
+                      currentContentBlockIndex = -1;
                     }
                   );
                 }
@@ -602,13 +663,11 @@ export class AnthropicTransformer implements Transformer {
                       !toolCallIndexToContentBlockIndex.has(toolCallIndex);
 
                     if (isUnknownIndex) {
-                      const newContentBlockIndex = hasTextContentStarted
-                        ? toolCallIndexToContentBlockIndex.size + 1
-                        : toolCallIndexToContentBlockIndex.size;
-                      if (newContentBlockIndex !== 0) {
+                      // Close any previous content block if open
+                      if (currentContentBlockIndex >= 0) {
                         const contentBlockStop = {
                           type: "content_block_stop",
-                          index: contentIndex,
+                          index: currentContentBlockIndex,
                         };
                         safeEnqueue(
                           encoder.encode(
@@ -617,19 +676,22 @@ export class AnthropicTransformer implements Transformer {
                             )}\n\n`
                           )
                         );
-                        contentIndex++;
+                        currentContentBlockIndex = -1;
                       }
+
+                      const newContentBlockIndex = contentIndex;
                       toolCallIndexToContentBlockIndex.set(
                         toolCallIndex,
                         newContentBlockIndex
                       );
+                      contentIndex++; // Increment contentIndex after setting the mapping
                       const toolCallId =
                         toolCall.id || `call_${Date.now()}_${toolCallIndex}`;
                       const toolCallName =
                         toolCall.function?.name || `tool_${toolCallIndex}`;
                       const contentBlockStart = {
                         type: "content_block_start",
-                        index: contentIndex,
+                        index: newContentBlockIndex,
                         content_block: {
                           type: "tool_use",
                           id: toolCallId,
@@ -645,6 +707,7 @@ export class AnthropicTransformer implements Transformer {
                           )}\n\n`
                         )
                       );
+                      currentContentBlockIndex = newContentBlockIndex;
 
                       const toolCallInfo = {
                         id: toolCallId,
@@ -684,7 +747,7 @@ export class AnthropicTransformer implements Transformer {
                       try {
                         const anthropicChunk = {
                           type: "content_block_delta",
-                          index: contentIndex,
+                          index: blockIndex, // Use the correct content block index
                           delta: {
                             type: "input_json_delta",
                             partial_json: toolCall.function.arguments,
@@ -706,7 +769,7 @@ export class AnthropicTransformer implements Transformer {
 
                           const fixedChunk = {
                             type: "content_block_delta",
-                            index: contentIndex,
+                            index: blockIndex, // Use the correct content block index
                             delta: {
                               type: "input_json_delta",
                               partial_json: fixedArgument,
@@ -734,13 +797,11 @@ export class AnthropicTransformer implements Transformer {
                     );
                   }
 
-                  if (
-                    (hasTextContentStarted || toolCallChunks > 0) &&
-                    !isClosed
-                  ) {
+                  // Close any remaining open content block
+                  if (currentContentBlockIndex >= 0) {
                     const contentBlockStop = {
                       type: "content_block_stop",
-                      index: contentIndex,
+                      index: currentContentBlockIndex,
                     };
                     safeEnqueue(
                       encoder.encode(
@@ -749,10 +810,11 @@ export class AnthropicTransformer implements Transformer {
                         )}\n\n`
                       )
                     );
+                    currentContentBlockIndex = -1;
                   }
 
                   if (!isClosed) {
-                    const stopReasonMapping = {
+                    const stopReasonMapping: Record<string, string> = {
                       stop: "end_turn",
                       length: "max_tokens",
                       tool_calls: "tool_use",
