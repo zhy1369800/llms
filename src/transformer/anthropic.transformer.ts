@@ -8,6 +8,7 @@ import {
 import { Transformer, TransformerContext } from "@/types/transformer";
 import { v4 as uuidv4 } from "uuid";
 import { getThinkLevel } from "@/utils/thinking";
+import { createApiError } from "@/api/middleware";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
@@ -239,7 +240,6 @@ export class AnthropicTransformer implements Transformer {
         let currentContentBlockIndex = -1; // Track the current content block index
 
         const safeEnqueue = (data: Uint8Array) => {
-
           if (!isClosed) {
             try {
               controller.enqueue(data);
@@ -606,46 +606,44 @@ export class AnthropicTransformer implements Transformer {
                     hasTextContentStarted = false;
                   }
 
-                  choice?.delta?.annotations.forEach(
-                    (annotation: any) => {
-                      contentIndex++;
-                      const contentBlockStart = {
-                        type: "content_block_start",
-                        index: contentIndex,
-                        content_block: {
-                          type: "web_search_tool_result",
-                          tool_use_id: `srvtoolu_${uuidv4()}`,
-                          content: [
-                            {
-                              type: "web_search_result",
-                              title: annotation.url_citation.title,
-                              url: annotation.url_citation.url,
-                            },
-                          ],
-                        },
-                      };
-                      safeEnqueue(
-                        encoder.encode(
-                          `event: content_block_start\ndata: ${JSON.stringify(
-                            contentBlockStart
-                          )}\n\n`
-                        )
-                      );
+                  choice?.delta?.annotations.forEach((annotation: any) => {
+                    contentIndex++;
+                    const contentBlockStart = {
+                      type: "content_block_start",
+                      index: contentIndex,
+                      content_block: {
+                        type: "web_search_tool_result",
+                        tool_use_id: `srvtoolu_${uuidv4()}`,
+                        content: [
+                          {
+                            type: "web_search_result",
+                            title: annotation.url_citation.title,
+                            url: annotation.url_citation.url,
+                          },
+                        ],
+                      },
+                    };
+                    safeEnqueue(
+                      encoder.encode(
+                        `event: content_block_start\ndata: ${JSON.stringify(
+                          contentBlockStart
+                        )}\n\n`
+                      )
+                    );
 
-                      const contentBlockStop = {
-                        type: "content_block_stop",
-                        index: contentIndex,
-                      };
-                      safeEnqueue(
-                        encoder.encode(
-                          `event: content_block_stop\ndata: ${JSON.stringify(
-                            contentBlockStop
-                          )}\n\n`
-                        )
-                      );
-                      currentContentBlockIndex = -1;
-                    }
-                  );
+                    const contentBlockStop = {
+                      type: "content_block_stop",
+                      index: contentIndex,
+                    };
+                    safeEnqueue(
+                      encoder.encode(
+                        `event: content_block_stop\ndata: ${JSON.stringify(
+                          contentBlockStop
+                        )}\n\n`
+                      )
+                    );
+                    currentContentBlockIndex = -1;
+                  });
                 }
 
                 if (choice?.delta?.tool_calls && !isClosed && !hasFinished) {
@@ -879,90 +877,97 @@ export class AnthropicTransformer implements Transformer {
     openaiResponse: ChatCompletion
   ): any {
     this.logger.debug({ response: openaiResponse }, `Original OpenAI response`);
-
-    const choice = openaiResponse.choices[0];
-    if (!choice) {
-      throw new Error("No choices found in OpenAI response");
-    }
-    const content: any[] = [];
-    if (choice.message.annotations) {
-      const id = `srvtoolu_${uuidv4()}`;
-      content.push({
-        type: "server_tool_use",
-        id,
-        name: "web_search",
-        input: {
-          query: "",
-        },
-      });
-      content.push({
-        type: "web_search_tool_result",
-        tool_use_id: id,
-        content: choice.message.annotations.map((item) => {
-          return {
-            type: "web_search_result",
-            url: item.url_citation.url,
-            title: item.url_citation.title,
-          };
-        }),
-      });
-    }
-    if (choice.message.content) {
-      content.push({
-        type: "text",
-        text: choice.message.content,
-      });
-    }
-    if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-      choice.message.tool_calls.forEach((toolCall, index) => {
-        let parsedInput = {};
-        try {
-          const argumentsStr = toolCall.function.arguments || "{}";
-
-          if (typeof argumentsStr === "object") {
-            parsedInput = argumentsStr;
-          } else if (typeof argumentsStr === "string") {
-            parsedInput = JSON.parse(argumentsStr);
-          }
-        } catch (parseError) {
-          parsedInput = { text: toolCall.function.arguments || "" };
-        }
-
+    try {
+      const choice = openaiResponse.choices[0];
+      if (!choice) {
+        throw new Error("No choices found in OpenAI response");
+      }
+      const content: any[] = [];
+      if (choice.message.annotations) {
+        const id = `srvtoolu_${uuidv4()}`;
         content.push({
-          type: "tool_use",
-          id: toolCall.id,
-          name: toolCall.function.name,
-          input: parsedInput,
+          type: "server_tool_use",
+          id,
+          name: "web_search",
+          input: {
+            query: "",
+          },
         });
-      });
-    }
+        content.push({
+          type: "web_search_tool_result",
+          tool_use_id: id,
+          content: choice.message.annotations.map((item) => {
+            return {
+              type: "web_search_result",
+              url: item.url_citation.url,
+              title: item.url_citation.title,
+            };
+          }),
+        });
+      }
+      if (choice.message.content) {
+        content.push({
+          type: "text",
+          text: choice.message.content,
+        });
+      }
+      if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+        choice.message.tool_calls.forEach((toolCall, index) => {
+          let parsedInput = {};
+          try {
+            const argumentsStr = toolCall.function.arguments || "{}";
 
-    const result = {
-      id: openaiResponse.id,
-      type: "message",
-      role: "assistant",
-      model: openaiResponse.model,
-      content: content,
-      stop_reason:
-        choice.finish_reason === "stop"
-          ? "end_turn"
-          : choice.finish_reason === "length"
-          ? "max_tokens"
-          : choice.finish_reason === "tool_calls"
-          ? "tool_use"
-          : choice.finish_reason === "content_filter"
-          ? "stop_sequence"
-          : "end_turn",
-      stop_sequence: null,
-      usage: {
-        input_tokens: openaiResponse.usage?.prompt_tokens || 0,
-        output_tokens: openaiResponse.usage?.completion_tokens || 0,
-      },
-    };
-    this.logger.debug(
-      { result },
-      `Conversion complete, final Anthropic response`
-    );
-    return result;
+            if (typeof argumentsStr === "object") {
+              parsedInput = argumentsStr;
+            } else if (typeof argumentsStr === "string") {
+              parsedInput = JSON.parse(argumentsStr);
+            }
+          } catch (parseError) {
+            parsedInput = { text: toolCall.function.arguments || "" };
+          }
+
+          content.push({
+            type: "tool_use",
+            id: toolCall.id,
+            name: toolCall.function.name,
+            input: parsedInput,
+          });
+        });
+      }
+
+      const result = {
+        id: openaiResponse.id,
+        type: "message",
+        role: "assistant",
+        model: openaiResponse.model,
+        content: content,
+        stop_reason:
+          choice.finish_reason === "stop"
+            ? "end_turn"
+            : choice.finish_reason === "length"
+            ? "max_tokens"
+            : choice.finish_reason === "tool_calls"
+            ? "tool_use"
+            : choice.finish_reason === "content_filter"
+            ? "stop_sequence"
+            : "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: openaiResponse.usage?.prompt_tokens || 0,
+          output_tokens: openaiResponse.usage?.completion_tokens || 0,
+        },
+      };
+      this.logger.debug(
+        { result },
+        `Conversion complete, final Anthropic response`
+      );
+      return result;
+    } catch (e) {
+      throw createApiError(
+        `Provider error: ${JSON.stringify(openaiResponse)}`,
+        500,
+        "provider_error"
+      );
+    }
   }
 }
