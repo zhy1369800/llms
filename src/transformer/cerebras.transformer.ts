@@ -6,7 +6,7 @@ import { Transformer } from "@/types/transformer";
  * @param content - The content to convert
  * @returns The converted string content
  */
-function convertContentToString(content: any): string {
+function convertContentToString(content: unknown): string {
   if (typeof content === 'string') {
     return content;
   }
@@ -17,7 +17,9 @@ function convertContentToString(content: any): string {
         if (typeof item === 'string') {
           return item;
         }
-        if (item.type === 'text' && item.text) {
+        if (typeof item === 'object' && item !== null && 
+            'type' in item && item.type === 'text' && 
+            'text' in item && typeof item.text === 'string') {
           return item.text;
         }
         return '';
@@ -43,32 +45,43 @@ export class CerebrasTransformer implements Transformer {
   async transformRequestIn(
     request: UnifiedChatRequest,
     provider: LLMProvider
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     // Deep clone the request to avoid modifying the original
     const transformedRequest = JSON.parse(JSON.stringify(request));
     
-    // Transform messages
+    // IMPORTANT: Cerebras API requires a model field in the request body
+    // If model is not present in the request, use the first model from provider config
+    if (!transformedRequest.model && provider.models && provider.models.length > 0) {
+      transformedRequest.model = provider.models[0];
+    }
+    
+    // Handle system field at the top level - convert to system message
+    if (transformedRequest.system !== undefined) {
+      const systemContent = convertContentToString(transformedRequest.system);
+      // Add system message at the beginning of messages array
+      if (!transformedRequest.messages) {
+        transformedRequest.messages = [];
+      }
+      transformedRequest.messages.unshift({
+        role: 'system',
+        content: systemContent
+      });
+      // Remove the top-level system field as it's now in messages
+      delete transformedRequest.system;
+    }
+    
+    // Transform messages - IMPORTANT: This must convert ALL message content to strings
     if (transformedRequest.messages && Array.isArray(transformedRequest.messages)) {
       transformedRequest.messages = transformedRequest.messages.map((message: UnifiedMessage) => {
-        const transformedMessage: any = { ...message };
+        const transformedMessage = { ...message };
         
-        // Convert content to string format
-        if (message.content !== undefined) {
-          transformedMessage.content = convertContentToString(message.content);
-        }
-        
-        // Handle system messages specifically
-        if (message.role === 'system' && message.content !== undefined) {
-          transformedMessage.content = convertContentToString(message.content);
+        // Convert content to string format for ALL messages
+        if (transformedMessage.content !== undefined) {
+          transformedMessage.content = convertContentToString(transformedMessage.content);
         }
         
         return transformedMessage;
       });
-    }
-    
-    // Handle system field if it exists at the top level
-    if (transformedRequest.system !== undefined) {
-      transformedRequest.system = convertContentToString(transformedRequest.system);
     }
     
     return {
