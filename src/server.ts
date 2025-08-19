@@ -125,7 +125,7 @@ class Server {
       this.app._server = this;
 
       this.app.addHook("preHandler", (request, reply, done) => {
-        if (request.body) {
+        if (request.url.startsWith('/v1/messages') && request.body) {
           request.log.info({ body: request.body }, "request body");
           request.body.stream === true
           if(!request.body.stream) {
