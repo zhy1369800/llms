@@ -352,8 +352,8 @@ export class AnthropicTransformer implements Transformer {
             for (const line of lines) {
               if (isClosed || hasFinished) break;
 
-              if (!line.startsWith("data: ")) continue;
-              const data = line.slice(6);
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
               this.logger.debug(`recieved data: ${data}`);
 
               if (data === "[DONE]") {
