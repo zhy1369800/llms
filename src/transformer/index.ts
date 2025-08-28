@@ -14,6 +14,7 @@ import { MaxCompletionTokens } from "./maxcompletiontokens.transformer";
 import { VertexClaudeTransformer } from "./vertex-claude.transformer";
 import { CerebrasTransformer } from "./cerebras.transformer";
 import { StreamOptionsTransformer } from "./streamoptions.transformer";
+import { OpenAITransformer } from "./openai.transformer";
 
 export default {
   AnthropicTransformer,
@@ -23,6 +24,7 @@ export default {
   DeepseekTransformer,
   TooluseTransformer,
   OpenrouterTransformer,
+  OpenAITransformer,
   MaxTokenTransformer,
   GroqTransformer,
   CleancacheTransformer,
