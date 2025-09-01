@@ -15,6 +15,7 @@ import { VertexClaudeTransformer } from "./vertex-claude.transformer";
 import { CerebrasTransformer } from "./cerebras.transformer";
 import { StreamOptionsTransformer } from "./streamoptions.transformer";
 import { OpenAITransformer } from "./openai.transformer";
+import { CustomParamsTransformer } from "./customparams.transformer";
 
 export default {
   AnthropicTransformer,
@@ -33,5 +34,6 @@ export default {
   SamplingTransformer,
   MaxCompletionTokens,
   CerebrasTransformer,
-  StreamOptionsTransformer
+  StreamOptionsTransformer,
+  CustomParamsTransformer
 };
