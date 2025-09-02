@@ -111,7 +111,7 @@ export class AnthropicTransformer implements Transformer {
                       image_url: {
                         url:
                           part.source?.type === "base64"
-                            ? part.source.data
+                            ? `data:${part.source.media_type},${part.source.data}`
                             : part.source.url,
                       },
                       media_type: part.source.media_type,
