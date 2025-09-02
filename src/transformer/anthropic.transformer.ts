@@ -5,7 +5,7 @@ import {
   UnifiedMessage,
   UnifiedTool,
 } from "@/types/llm";
-import { Transformer, TransformerContext } from "@/types/transformer";
+import { Transformer, TransformerContext, TransformerOptions } from "@/types/transformer";
 import { v4 as uuidv4 } from "uuid";
 import { getThinkLevel } from "@/utils/thinking";
 import { createApiError } from "@/api/middleware";
