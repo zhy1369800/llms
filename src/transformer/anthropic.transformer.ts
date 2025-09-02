@@ -13,15 +13,27 @@ import { createApiError } from "@/api/middleware";
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
   endPoint = "/v1/messages";
+  private useBearer: boolean;
+
+  constructor(private readonly options?: TransformerOptions) {
+    this.useBearer = this.options?.UseBearer ?? false;
+  }
 
   async auth(request: any, provider: LLMProvider): Promise<any> {
+    const headers: Record<string, string | undefined> = {};
+    
+    if (this.useBearer) {
+      headers["authorization"] = `Bearer ${provider.apiKey}`;
+      headers["x-api-key"] = undefined;
+    } else {
+      headers["x-api-key"] = provider.apiKey;
+      headers["authorization"] = undefined;
+    }
+
     return {
       body: request,
       config: {
-        headers: {
-          "x-api-key": provider.apiKey,
-          authorization: undefined,
-        },
+        headers,
       },
     };
   }
