@@ -5,7 +5,8 @@ export function sendUnifiedRequest(
   url: URL | string,
   request: UnifiedChatRequest,
   config: any,
-  logger?: any
+  logger?: any,
+  context: any
 ): Promise<Response> {
   const headers = new Headers({
     "Content-Type": "application/json",
@@ -44,6 +45,7 @@ export function sendUnifiedRequest(
   }
   logger?.debug(
     {
+      reqId: context.req.id,
       request: fetchOptions,
       headers: Object.fromEntries(headers.entries()),
       requestUrl: typeof url === "string" ? url : url.toString(),

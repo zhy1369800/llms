@@ -204,7 +204,8 @@ export class AnthropicTransformer implements Transformer {
         throw new Error("Stream response body is null");
       }
       const convertedStream = await this.convertOpenAIStreamToAnthropic(
-        response.body
+        response.body,
+        context
       );
       return new Response(convertedStream, {
         headers: {
@@ -215,7 +216,10 @@ export class AnthropicTransformer implements Transformer {
       });
     } else {
       const data = await response.json();
-      const anthropicResponse = this.convertOpenAIResponseToAnthropic(data);
+      const anthropicResponse = this.convertOpenAIResponseToAnthropic(
+        data,
+        context
+      );
       return new Response(JSON.stringify(anthropicResponse), {
         headers: { "Content-Type": "application/json" },
       });
@@ -234,7 +238,8 @@ export class AnthropicTransformer implements Transformer {
   }
 
   private async convertOpenAIStreamToAnthropic(
-    openaiStream: ReadableStream
+    openaiStream: ReadableStream,
+    context: TransformerContext
   ): Promise<ReadableStream> {
     const readable = new ReadableStream({
       start: async (controller) => {
@@ -260,7 +265,13 @@ export class AnthropicTransformer implements Transformer {
             try {
               controller.enqueue(data);
               const dataStr = new TextDecoder().decode(data);
-              this.logger.debug({ dataStr }, `send data`);
+              this.logger.debug(
+                {
+                  reqId: context.req.id,
+                  data: dataStr,
+                  type: 'send data'
+                }
+              );
             } catch (error) {
               if (
                 error instanceof TypeError &&
@@ -268,7 +279,13 @@ export class AnthropicTransformer implements Transformer {
               ) {
                 isClosed = true;
               } else {
-                this.logger.debug(`send data error: ${error.message}`);
+                this.logger.debug(
+                  {
+                    reqId: context.req.id,
+                    error: error.message, 
+                    type: 'send data error'
+                  }
+                );
                 throw error;
               }
             }
@@ -370,7 +387,13 @@ export class AnthropicTransformer implements Transformer {
 
               if (!line.startsWith("data:")) continue;
               const data = line.slice(5).trim();
-              this.logger.debug(`recieved data: ${data}`);
+              this.logger.debug(
+                {
+                  reqId: context.req.id,
+                  type: 'recieved data',
+                  data
+                }
+              );
 
               if (data === "[DONE]") {
                 continue;
@@ -379,7 +402,13 @@ export class AnthropicTransformer implements Transformer {
               try {
                 const chunk = JSON.parse(data);
                 totalChunks++;
-                this.logger.debug({ response: chunk }, `Original Response`);
+                this.logger.debug(
+                  {
+                    reqId: context.req.id,
+                    response: chunk,
+                    tppe: "Original Response"
+                  }
+                );
                 if (chunk.error) {
                   const errorMessage = {
                     type: "error",
@@ -882,7 +911,12 @@ export class AnthropicTransformer implements Transformer {
         }
       },
       cancel: (reason) => {
-        this.logger.debug(`cancle stream: ${reason}`);
+        this.logger.debug(
+          {
+            reqId: context.req.id,
+          },
+          `cancle stream: ${reason}`
+        );
       },
     });
 
@@ -890,9 +924,16 @@ export class AnthropicTransformer implements Transformer {
   }
 
   private convertOpenAIResponseToAnthropic(
-    openaiResponse: ChatCompletion
+    openaiResponse: ChatCompletion,
+    context: TransformerContext
   ): any {
-    this.logger.debug({ response: openaiResponse }, `Original OpenAI response`);
+    this.logger.debug(
+      {
+        reqId: context.req.id,
+        response: openaiResponse,
+      },
+      `Original OpenAI response`
+    );
     try {
       const choice = openaiResponse.choices[0];
       if (!choice) {
@@ -980,7 +1021,10 @@ export class AnthropicTransformer implements Transformer {
         },
       };
       this.logger.debug(
-        { result },
+        {
+          reqId: context.req.id,
+          result,
+        },
         `Conversion complete, final Anthropic response`
       );
       return result;

@@ -125,10 +125,10 @@ class Server {
       this.app._server = this;
 
       this.app.addHook("preHandler", (request, reply, done) => {
-        if (request.url.startsWith('/v1/messages') && request.body) {
-          request.log.info({ body: request.body }, "request body");
-          request.body.stream === true
-          if(!request.body.stream) {
+        if (request.url.startsWith("/v1/messages") && request.body) {
+          request.log.info({ data: request.body, type: "request body" });
+          request.body.stream === true;
+          if (!request.body.stream) {
             request.body.stream = false; // Ensure stream is false if not set
           }
         }

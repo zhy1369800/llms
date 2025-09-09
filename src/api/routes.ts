@@ -50,7 +50,10 @@ async function handleTransformerEndpoint(
     provider,
     fastify,
     bypass,
-    transformer
+    transformer,
+    {
+      req
+    }
   );
 
   // 处理响应转换器链
@@ -179,7 +182,8 @@ async function sendRequestToProvider(
   provider: any,
   fastify: FastifyInstance,
   bypass: boolean,
-  transformer: any
+  transformer: any,
+  context: any
 ) {
   const url = config.url || new URL(provider.baseUrl);
 
@@ -219,7 +223,8 @@ async function sendRequestToProvider(
         ...(config?.headers || {}),
       },
     },
-    fastify.log
+    fastify.log,
+    context
   );
 
   // 处理请求错误
