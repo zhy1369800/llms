@@ -13,6 +13,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { getThinkLevel } from "@/utils/thinking";
 import { createApiError } from "@/api/middleware";
+import { formatBase64 } from "@/utils/image";
 
 export class AnthropicTransformer implements Transformer {
   name = "Anthropic";
@@ -115,7 +116,7 @@ export class AnthropicTransformer implements Transformer {
                       image_url: {
                         url:
                           part.source?.type === "base64"
-                            ? `data:${part.source.media_type};base64,${part.source.data}`
+                            ? formatBase64(part.source.data, part.source.media_type)
                             : part.source.url,
                       },
                       media_type: part.source.media_type,
