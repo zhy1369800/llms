@@ -13,6 +13,10 @@
     "moduleResolution": "node",
     "declaration": true,
     "sourceMap": true,
+    "inlineSourceMap": false, // 推荐使用 false, 生成独立的 .map 文件
+    "inlineSources": false, // 推荐使用 false, 不将源文件嵌入到 sourcemap 中
+    "declarationMap": true, // 生成.d.ts.map文件，方便调试类型定义
+
     "baseUrl": "./",
     "paths": {
       "@/*": [ "src/*" ]

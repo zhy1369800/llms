@@ -43,6 +43,7 @@ async function handleTransformerEndpoint(
     }
   );
 
+  console.info("bypass ===========" +bypass);
   // 发送请求到LLM提供者
   const response = await sendRequestToProvider(
     requestBody,
@@ -163,6 +164,8 @@ function shouldBypassTransformers(
   transformer: any,
   body: any
 ): boolean {
+
+ // console.info("provider ===========" + JSON.stringify(provider) + "  transformer:"+JSON.stringify(transformer))
   return (
     provider.transformer?.use?.length === 1 &&
     provider.transformer.use[0].name === transformer.name &&
@@ -231,7 +234,7 @@ async function sendRequestToProvider(
   if (!response.ok) {
     const errorText = await response.text();
     throw createApiError(
-      `Error from provider(${provider.name},${requestBody.model}: ${response.status}): ${errorText}`,
+      `Error from provider(${url},${provider.name},${requestBody.model}: ${response.status}): ${errorText}`,
       response.status,
       "provider_response_error"
     );
